@@ -1,1 +1,26 @@
 # MutsukiDistributedHost
+
+Mutsuki 的外置分布式 Sidecar。它通过分布式无关的本地 Host control API 观察和提交普通
+`TaskBatch`，通过认证后的 Mutsuki Link 会话承载远程控制与点对点数据流；它不修改 Core、
+ServiceHost、Runner 或插件执行路径。
+
+## Phase 3 能力
+
+- `mutsuki-distributed-host-adapter`：本地 Host 的 submit/cancel/snapshot/event/drain/health
+  适配；当前提供 ServiceHost IPC 实现。
+- `mutsuki-distributed-contracts`：Worker 能力快照、紧凑 pulse、远程 envelope、Attempt
+  映射和有界 wire frame。
+- `mutsuki-distributed-runtime`：Disabled / LocalObservable / Clustered 组合、兼容性过滤、
+  有限 fallback、Worker 资源本地化和从输入重建 Attempt。
+- `mutsuki-distributed-host`：安全的独立进程入口；默认 `disabled`，不会启动网络或后台任务。
+
+```bash
+cargo run -p mutsuki-distributed-host -- disabled
+cargo test --workspace --all-targets
+```
+
+Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link session、Worker 集合和
+资源本地化器。仓库不会用匿名明文网络或生产 fallback 猜测这些值。
+
+架构与失败语义见 [docs/phase3-architecture.md](docs/phase3-architecture.md)，Issue #1 的验收
+证据见 [docs/acceptance/issue-1.md](docs/acceptance/issue-1.md)。

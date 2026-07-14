@@ -1,0 +1,17 @@
+[package]
+name = "mutsuki-distributed-contracts"
+description = "Wire contracts for the external Mutsuki Distributed Host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mutsuki-runtime-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
