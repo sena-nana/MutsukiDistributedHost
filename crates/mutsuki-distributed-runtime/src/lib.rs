@@ -35,10 +35,12 @@ mod content_store;
 mod durable_registry;
 mod ha_control;
 mod recovery;
+mod scheduler;
 pub use content_store::*;
 pub use durable_registry::*;
 pub use ha_control::*;
 pub use recovery::*;
+pub use scheduler::*;
 
 pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
     ProtocolDescriptor {
@@ -923,5 +925,7 @@ mod durable_tests;
 mod ha_tests;
 #[cfg(test)]
 mod recovery_tests;
+#[cfg(test)]
+mod scheduler_tests;
 #[cfg(test)]
 mod tests;

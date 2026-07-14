@@ -55,3 +55,16 @@ Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link
 
 详见 [docs/phase6-recovery.md](docs/phase6-recovery.md) 与
 [docs/acceptance/issue-8.md](docs/acceptance/issue-8.md)。
+
+## Phase 7 能力
+
+- 字典序任务优先级、节点本地工作优先和控制/实时资源硬保留。
+- capability/plugin generation 索引、硬约束过滤、事件触发 Top-K 与预计算 fallback。
+- queue/RTT/传输/预热/执行/回传/提交/jitter/恢复的端到端成本，流式 TTFT/steady SLO，
+  以及有界实测 histogram/EWMA 性能模型。
+- 节点本地短时 Reservation 和最终 Admission；过期 capability 快照、过载及内存不足结构化拒绝。
+- telemetry、hash/disk、调度操作和独立数据通道硬预算；拥塞时保留控制通道并按固定次序降级。
+- `LocalEstimatedCost > RemoteCost + SafetyMargin` 的分发收益门槛；帧级、本地设备依赖和短任务默认本地。
+
+设计与预算语义见 [docs/phase7-scheduling.md](docs/phase7-scheduling.md)，Issue #10 验收证据见
+[docs/acceptance/issue-10.md](docs/acceptance/issue-10.md)。
