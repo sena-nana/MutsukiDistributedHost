@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{MemberHealth, NodeId};
+use crate::{IdentityStatus, MemberHealth, NodeId};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -167,6 +167,8 @@ pub struct SchedulingNodeSnapshot {
     pub os: String,
     pub abi: String,
     pub trust_level: u8,
+    pub identity_status: IdentityStatus,
+    pub integrity_verified: bool,
     pub health: MemberHealth,
     pub pressure_bucket: u8,
     pub available_cpu_units: u32,
