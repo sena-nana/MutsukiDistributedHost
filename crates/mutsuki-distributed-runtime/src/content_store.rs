@@ -176,6 +176,20 @@ impl ContentStore {
         self.missing_chunks(manifest)
     }
 
+    pub fn missing_upload_bytes(
+        &self,
+        manifest: &ContentManifest,
+    ) -> Result<u64, DistributedError> {
+        self.validate_manifest(manifest)?;
+        let missing: BTreeSet<_> = self.missing_chunks(manifest)?.into_iter().collect();
+        Ok(manifest
+            .chunks
+            .iter()
+            .filter(|chunk| missing.contains(&chunk.index))
+            .map(|chunk| chunk.size)
+            .sum())
+    }
+
     pub fn write_chunk(
         &self,
         content_digest: &str,
@@ -274,6 +288,14 @@ impl ContentStore {
 
     pub fn has_content(&self, content_id: &ContentId) -> bool {
         self.manifest_path(&content_id.digest).exists()
+    }
+
+    pub fn manifest(&self, content_id: &ContentId) -> Result<ContentManifest, DistributedError> {
+        let manifest = self.committed_manifest(&content_id.digest)?;
+        if manifest.content_id != *content_id {
+            return Err(corrupt_content());
+        }
+        Ok(manifest)
     }
 
     pub fn read_content(&self, content_id: &ContentId) -> Result<Vec<u8>, DistributedError> {
