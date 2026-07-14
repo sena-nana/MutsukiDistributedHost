@@ -31,6 +31,11 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod content_store;
+mod durable_registry;
+pub use content_store::*;
+pub use durable_registry::*;
+
 pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
     ProtocolDescriptor {
         id: ProtocolId::new(DISTRIBUTED_PROTOCOL_ID).expect("static distributed protocol id"),
@@ -908,5 +913,7 @@ const fn disabled() -> DistributedError {
     )
 }
 
+#[cfg(test)]
+mod durable_tests;
 #[cfg(test)]
 mod tests;
