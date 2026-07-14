@@ -24,3 +24,14 @@ Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link
 
 架构与失败语义见 [docs/phase3-architecture.md](docs/phase3-architecture.md)，Issue #1 的验收
 证据见 [docs/acceptance/issue-1.md](docs/acceptance/issue-1.md)。
+
+## Phase 4 能力
+
+- 小型、追加式 `GlobalTaskRegistry` WAL，持久保存 Task/Attempt/ContentId 状态并复制到管理副本。
+- Fast、Durable、Critical 明确回执；无法证明所请求持久性时结构化拒绝。
+- SHA-256 ContentId、分块 manifest、去重、断点续传、真实副本目录和有预算的数据传输队列。
+- OutputStaged → Committed 两阶段输出，旧 Attempt 输出进入冲突记录，不覆盖正式结果。
+- 副本修复计划、引用计数、保留期和安全 GC。
+
+数据分层和持久性语义见 [docs/phase4-durable-registry.md](docs/phase4-durable-registry.md)，Issue #4
+验收证据见 [docs/acceptance/issue-4.md](docs/acceptance/issue-4.md)。

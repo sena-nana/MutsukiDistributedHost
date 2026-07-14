@@ -11,6 +11,9 @@ use mutsuki_runtime_contracts::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod durability;
+pub use durability::*;
+
 pub const DISTRIBUTED_PROTOCOL_ID: &str = "mutsuki.distributed.cluster";
 pub const DISTRIBUTED_PROTOCOL_MAJOR: u16 = 1;
 pub const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
@@ -223,6 +226,11 @@ pub enum DistributedErrorKind {
     RetryUnsafe,
     TaskUnknown,
     Protocol,
+    Storage,
+    Corrupt,
+    DurabilityUnavailable,
+    InvalidTransition,
+    Conflict,
 }
 
 impl From<&DistributedError> for WorkerFailure {

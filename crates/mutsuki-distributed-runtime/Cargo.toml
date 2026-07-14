@@ -12,9 +12,12 @@ mutsuki-distributed-contracts.workspace = true
 mutsuki-distributed-host-adapter.workspace = true
 mutsuki-link-core.workspace = true
 mutsuki-runtime-contracts.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 tokio.workspace = true
 
 [lints]
