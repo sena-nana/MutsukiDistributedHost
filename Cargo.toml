@@ -1,0 +1,37 @@
+[workspace]
+members = [
+    "crates/mutsuki-distributed-contracts",
+    "crates/mutsuki-distributed-host-adapter",
+    "crates/mutsuki-distributed-runtime",
+    "crates/mutsuki-distributed-host",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/sena-nana/MutsukiDistributedHost"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync", "time"] }
+
+mutsuki-runtime-contracts = { git = "https://github.com/sena-nana/MutsukiCore.git", rev = "d9397ca7a090b7080c6b98774a8134c3a223a039" }
+mutsuki-link-core = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9" }
+mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "114f93cc0b2d6335a765ea3bd4f4445328cd4a97" }
+mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "114f93cc0b2d6335a765ea3bd4f4445328cd4a97" }
+
+mutsuki-distributed-contracts = { path = "crates/mutsuki-distributed-contracts" }
+mutsuki-distributed-host-adapter = { path = "crates/mutsuki-distributed-host-adapter" }
+mutsuki-distributed-runtime = { path = "crates/mutsuki-distributed-runtime" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

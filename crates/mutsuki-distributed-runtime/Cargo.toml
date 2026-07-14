@@ -1,0 +1,21 @@
+[package]
+name = "mutsuki-distributed-runtime"
+description = "External Sidecar runtime for basic Mutsuki remote execution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mutsuki-distributed-contracts.workspace = true
+mutsuki-distributed-host-adapter.workspace = true
+mutsuki-link-core.workspace = true
+mutsuki-runtime-contracts.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "mutsuki-distributed-host"
+description = "External Mutsuki Distributed Host sidecar process"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mutsuki-distributed-contracts.workspace = true
+mutsuki-distributed-host-adapter.workspace = true
+mutsuki-distributed-runtime.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
