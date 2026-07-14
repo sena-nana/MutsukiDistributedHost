@@ -15,6 +15,8 @@ mod durability;
 pub use durability::*;
 mod ha;
 pub use ha::*;
+mod recovery;
+pub use recovery::*;
 
 pub const DISTRIBUTED_PROTOCOL_ID: &str = "mutsuki.distributed.cluster";
 pub const DISTRIBUTED_PROTOCOL_MAJOR: u16 = 1;

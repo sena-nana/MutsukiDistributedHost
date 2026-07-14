@@ -46,3 +46,12 @@ Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link
 
 架构与降级矩阵见 [docs/phase5-ha-control.md](docs/phase5-ha-control.md)，Issue #6 验收证据见
 [docs/acceptance/issue-6.md](docs/acceptance/issue-6.md)。
+
+## Phase 6 能力
+
+- Dead/lease-expired 后按资格、deadline、退避和 Attempt 预算从输入重启。
+- Core `TaskCheckpoint` 的内容寻址基线、chunk COW 去重、lineage/实现校验与预算。
+- 会话级迁移/standby 提升、显式 Mirrored 资源准入和外部副作用恢复矩阵。
+
+详见 [docs/phase6-recovery.md](docs/phase6-recovery.md) 与
+[docs/acceptance/issue-8.md](docs/acceptance/issue-8.md)。
