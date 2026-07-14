@@ -35,3 +35,14 @@ Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link
 
 数据分层和持久性语义见 [docs/phase4-durable-registry.md](docs/phase4-durable-registry.md)，Issue #4
 验收证据见 [docs/acceptance/issue-4.md](docs/acceptance/issue-4.md)。
+
+## Phase 5 能力
+
+- 可替换 `CftControlBackend` 与文件持久化参考实现；支持 3 个完整投票节点或 2 个完整节点 + Witness。
+- 多数派选举、term/epoch fencing、Follower 查询/转发、旧 Leader 恢复降级。
+- 短 ControlLease 与长 ExecutionGrant 分离；选举期间纯计算继续，新授权 fence 旧结果。
+- Healthy / Impaired / Degraded / QuorumLost / Isolated / SafeStop 明确降级。
+- 版本化紧凑 pulse、Healthy → Suspect → Dead 检测，以及有滞回的 Leader 偏好转移。
+
+架构与降级矩阵见 [docs/phase5-ha-control.md](docs/phase5-ha-control.md)，Issue #6 验收证据见
+[docs/acceptance/issue-6.md](docs/acceptance/issue-6.md)。

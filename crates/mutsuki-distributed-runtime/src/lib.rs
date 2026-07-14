@@ -33,8 +33,10 @@ use std::sync::{Arc, Mutex};
 
 mod content_store;
 mod durable_registry;
+mod ha_control;
 pub use content_store::*;
 pub use durable_registry::*;
+pub use ha_control::*;
 
 pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
     ProtocolDescriptor {
@@ -915,5 +917,7 @@ const fn disabled() -> DistributedError {
 
 #[cfg(test)]
 mod durable_tests;
+#[cfg(test)]
+mod ha_tests;
 #[cfg(test)]
 mod tests;

@@ -13,6 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod durability;
 pub use durability::*;
+mod ha;
+pub use ha::*;
 
 pub const DISTRIBUTED_PROTOCOL_ID: &str = "mutsuki.distributed.cluster";
 pub const DISTRIBUTED_PROTOCOL_MAJOR: u16 = 1;
@@ -231,6 +233,11 @@ pub enum DistributedErrorKind {
     DurabilityUnavailable,
     InvalidTransition,
     Conflict,
+    QuorumLost,
+    Fenced,
+    GrantExpired,
+    NotLeader,
+    ControlLeaseExpired,
 }
 
 impl From<&DistributedError> for WorkerFailure {
