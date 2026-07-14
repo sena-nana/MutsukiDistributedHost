@@ -15,6 +15,7 @@ mutsuki-runtime-contracts.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+hmac.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

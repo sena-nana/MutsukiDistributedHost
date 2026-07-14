@@ -36,11 +36,17 @@ mod durable_registry;
 mod ha_control;
 mod recovery;
 mod scheduler;
+mod trust_audit;
+mod trust_plane;
+mod trust_reputation;
 pub use content_store::*;
 pub use durable_registry::*;
 pub use ha_control::*;
 pub use recovery::*;
 pub use scheduler::*;
+pub use trust_audit::*;
+pub use trust_plane::*;
+pub use trust_reputation::*;
 
 pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
     ProtocolDescriptor {
@@ -929,3 +935,5 @@ mod recovery_tests;
 mod scheduler_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trust_tests;

@@ -1,8 +1,8 @@
 use mutsuki_distributed_contracts::{
     AdmissionOutcome, CapabilityBits, CombinedPulse, DistributedError, DistributedErrorKind,
-    LatencyClass, LexicographicPriority, LocalResourceBudget, MemberHealth, NetworkBudget,
-    NetworkDegradation, NodeId, PlacementCandidate, PlacementFlags, PlacementPlan, QualityPolicy,
-    RemoteLoadAction, ReservationRequest, SchedulingEvent, SchedulingNodeSnapshot,
+    IdentityStatus, LatencyClass, LexicographicPriority, LocalResourceBudget, MemberHealth,
+    NetworkBudget, NetworkDegradation, NodeId, PlacementCandidate, PlacementFlags, PlacementPlan,
+    QualityPolicy, RemoteLoadAction, ReservationRequest, SchedulingEvent, SchedulingNodeSnapshot,
     TaskPlacementRequest, TelemetryClass, WorkOrigin,
 };
 use std::cmp::Ordering;
@@ -1016,6 +1016,8 @@ pub fn is_remote_profitable(
 
 fn hard_node_filter(node: &SchedulingNodeSnapshot, request: &TaskPlacementRequest) -> bool {
     node.health == MemberHealth::Healthy
+        && node.identity_status == IdentityStatus::Active
+        && node.integrity_verified
         && node.capabilities.contains(request.required_capabilities)
         && node.trust_level >= request.minimum_trust
         && request.required_os.as_ref().is_none_or(|os| os == &node.os)

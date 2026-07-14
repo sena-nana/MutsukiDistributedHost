@@ -68,3 +68,16 @@ Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link
 
 设计与预算语义见 [docs/phase7-scheduling.md](docs/phase7-scheduling.md)，Issue #10 验收证据见
 [docs/acceptance/issue-10.md](docs/acceptance/issue-10.md)。
+
+## Phase 8 能力
+
+- TrustedLan / AuditedLan / RestrictedWorkers 显式模式；ByzantineResistant 只保留可替换边界，不默认启用。
+- 稳定 NodeId、审批、HMAC 身份、密钥轮换/吊销/隔离与 Mutsuki Link 双向认证加密基线。
+- 敏感度/信任级别/缓存/attestation/验证策略硬过滤，以及 Controller 签发的最小资源授权。
+- 制品 allowlist、ContentId/generation 完整性、可选 attestation verifier、term/epoch/Attempt 收据与提交证明。
+- 确定性 replay、显式浮点容差、领域 verifier、N-of-M/spot-check/proof/manual-review 计划；验证失败隔离。
+- 真实落盘追加式哈希链审计、Merkle inclusion/segment consistency、按 Task/Attempt/Node 追踪。
+- 慢变有界信誉、失陷演练/fencing/授权撤销/制品隔离，以及独立 trust CPU/网络/存储预算。
+
+安全边界与失败语义见 [docs/phase8-trust-plane.md](docs/phase8-trust-plane.md)，Issue #12 验收证据见
+[docs/acceptance/issue-12.md](docs/acceptance/issue-12.md)。

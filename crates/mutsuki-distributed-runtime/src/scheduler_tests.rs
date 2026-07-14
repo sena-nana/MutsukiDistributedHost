@@ -59,6 +59,8 @@ fn node(
         },
         abi: "aarch64".into(),
         trust_level: 3,
+        identity_status: IdentityStatus::Active,
+        integrity_verified: true,
         health: MemberHealth::Healthy,
         pressure_bucket: pressure,
         available_cpu_units: 8,
@@ -347,6 +349,38 @@ fn local_admission_corrects_stale_state_and_protects_local_reserve() {
     assert_eq!(
         admission.remote_load_action(),
         RemoteLoadAction::CancelRemoteBackground
+    );
+}
+
+#[test]
+fn scheduler_rejects_revoked_identity_and_unverified_runtime() {
+    let mut scheduler = PlacementScheduler::new(2, 4, 8, 2).unwrap();
+    let mut revoked = node(
+        "local",
+        CapabilityBits::CPU,
+        0,
+        variant("cpu", CapabilityBits::CPU, 2.0),
+    );
+    revoked.identity_status = IdentityStatus::Revoked;
+    scheduler
+        .update_node(SchedulingEvent::CapabilityChanged, revoked)
+        .unwrap();
+    let mut unverified = node(
+        "remote",
+        CapabilityBits::CPU,
+        0,
+        variant("cpu", CapabilityBits::CPU, 1.0),
+    );
+    unverified.integrity_verified = false;
+    scheduler
+        .update_node(SchedulingEvent::CapabilityChanged, unverified)
+        .unwrap();
+    assert_eq!(
+        scheduler
+            .schedule(SchedulingEvent::NewTask, &request(CapabilityBits::CPU))
+            .unwrap_err()
+            .kind,
+        DistributedErrorKind::WorkerUnavailable
     );
 }
 
