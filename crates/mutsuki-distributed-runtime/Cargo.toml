@@ -20,6 +20,7 @@ hmac.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+mutsuki-distributed-control-client.workspace = true
 tempfile.workspace = true
 
 [lints]

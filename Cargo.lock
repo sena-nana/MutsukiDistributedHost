@@ -323,6 +323,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mutsuki-distributed-control-client"
+version = "0.1.0"
+dependencies = [
+ "hmac",
+ "mutsuki-distributed-contracts",
+ "mutsuki-link",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "mutsuki-distributed-host"
 version = "0.1.0"
 dependencies = [
@@ -353,6 +366,7 @@ version = "0.1.0"
 dependencies = [
  "hmac",
  "mutsuki-distributed-contracts",
+ "mutsuki-distributed-control-client",
  "mutsuki-distributed-host-adapter",
  "mutsuki-link",
  "mutsuki-link-core",

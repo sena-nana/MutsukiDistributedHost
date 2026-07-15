@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/mutsuki-distributed-contracts",
+    "crates/mutsuki-distributed-control-client",
     "crates/mutsuki-distributed-host-adapter",
     "crates/mutsuki-distributed-runtime",
     "crates/mutsuki-distributed-host",
@@ -30,6 +31,7 @@ mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHo
 mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "f6e142f509555b47ebd4b934f5623e28bb402c5e" }
 
 mutsuki-distributed-contracts = { path = "crates/mutsuki-distributed-contracts" }
+mutsuki-distributed-control-client = { path = "crates/mutsuki-distributed-control-client" }
 mutsuki-distributed-host-adapter = { path = "crates/mutsuki-distributed-host-adapter" }
 mutsuki-distributed-runtime = { path = "crates/mutsuki-distributed-runtime" }
 

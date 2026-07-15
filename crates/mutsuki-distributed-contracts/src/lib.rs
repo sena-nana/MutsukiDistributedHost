@@ -25,6 +25,9 @@ pub use trust::*;
 pub const DISTRIBUTED_PROTOCOL_ID: &str = "mutsuki.distributed.cluster";
 pub const DISTRIBUTED_PROTOCOL_MAJOR: u16 = 1;
 pub const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
+pub const DISTRIBUTED_CAPABILITY_SCHEMA_VERSION: u16 = 1;
+pub const DISTRIBUTED_HOST_RELEASE: &str = "mutsuki-distributed-host-clustered-mvp-1";
+pub const DISTRIBUTED_HOST_REVISION: &str = env!("MUTSUKI_DISTRIBUTED_HOST_REVISION");
 
 /// Public maturity is a compatibility contract: callers can distinguish a
 /// wire contract or conformance model from something that can be deployed.
@@ -50,6 +53,66 @@ pub enum DistributedCapability {
     HighAvailability,
     RecoveryPolicy,
     TrustPolicy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DistributedFeature {
+    Clustered,
+    Durable,
+    Critical,
+    HighAvailability,
+    Checkpoint,
+    Trust,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SidecarCapabilityProof {
+    pub schema_version: u16,
+    pub protocol_major: u16,
+    pub distributed_host_release: String,
+    pub distributed_host_revision: String,
+    pub capability_level: CapabilityMaturity,
+    pub feature_proof: BTreeMap<DistributedFeature, CapabilityMaturity>,
+}
+
+impl SidecarCapabilityProof {
+    pub fn current() -> Self {
+        Self {
+            schema_version: DISTRIBUTED_CAPABILITY_SCHEMA_VERSION,
+            protocol_major: DISTRIBUTED_PROTOCOL_MAJOR,
+            distributed_host_release: DISTRIBUTED_HOST_RELEASE.into(),
+            distributed_host_revision: DISTRIBUTED_HOST_REVISION.into(),
+            capability_level: CapabilityMaturity::Deployable,
+            feature_proof: BTreeMap::from([
+                (
+                    DistributedFeature::Clustered,
+                    CapabilityMaturity::Deployable,
+                ),
+                (
+                    DistributedFeature::Durable,
+                    CapabilityMaturity::InProcessTest,
+                ),
+                (
+                    DistributedFeature::Critical,
+                    CapabilityMaturity::Unavailable,
+                ),
+                (
+                    DistributedFeature::HighAvailability,
+                    CapabilityMaturity::Unavailable,
+                ),
+                (
+                    DistributedFeature::Checkpoint,
+                    CapabilityMaturity::ReferenceModel,
+                ),
+                (
+                    DistributedFeature::Trust,
+                    CapabilityMaturity::ReferenceModel,
+                ),
+            ]),
+        }
+    }
 }
 
 impl DistributedCapability {
@@ -218,6 +281,7 @@ pub struct ControllerRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "command", content = "payload", rename_all = "snake_case")]
 pub enum ControllerCommand {
+    Capabilities,
     Submit(Box<ControllerSubmit>),
     Cancel(GlobalTaskId),
     Outcome(GlobalTaskId),
@@ -242,6 +306,7 @@ pub struct ControllerReply {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "reply", content = "payload", rename_all = "snake_case")]
 pub enum ControllerReplyBody {
+    Capabilities(SidecarCapabilityProof),
     Placement(TaskPlacement),
     Cancelled,
     Outcome(Option<LocalTaskOutcome>),

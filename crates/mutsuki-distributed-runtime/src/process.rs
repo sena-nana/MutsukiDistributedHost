@@ -6,8 +6,9 @@ use hmac::{Hmac, Mac};
 use mutsuki_distributed_contracts::{
     ClusterCommand, ClusterReply, ClusterReplyBody, ClusterRequest, ControllerCommand,
     ControllerReply, ControllerReplyBody, ControllerRequest, ControllerSubmit, DistributedError,
-    DistributedErrorKind, GlobalTaskId, LocalTaskOutcome, NodeId, TaskPlacement,
-    WorkerAdvertisement, WorkerFailure, WorkerHealth, WorkerPulse, decode_control, encode_control,
+    DistributedErrorKind, GlobalTaskId, LocalTaskOutcome, NodeId, SidecarCapabilityProof,
+    TaskPlacement, WorkerAdvertisement, WorkerFailure, WorkerHealth, WorkerPulse, decode_control,
+    encode_control,
 };
 use mutsuki_distributed_host_adapter::HostAdapter;
 use mutsuki_link::{
@@ -836,6 +837,12 @@ impl ControllerProcess {
             };
             let request: ControllerRequest = decode_control(&bytes)?;
             let (result, shutdown) = match request.command {
+                ControllerCommand::Capabilities => (
+                    Ok(ControllerReplyBody::Capabilities(
+                        SidecarCapabilityProof::current(),
+                    )),
+                    false,
+                ),
                 ControllerCommand::Submit(submit) => {
                     let ControllerSubmit {
                         global_task_id,
@@ -978,6 +985,15 @@ impl ControllerClient {
             *state = None;
         }
         result
+    }
+
+    pub async fn capabilities(&self) -> Result<SidecarCapabilityProof, DistributedError> {
+        match self.request(ControllerCommand::Capabilities).await? {
+            ControllerReplyBody::Capabilities(proof) => Ok(proof),
+            _ => Err(protocol_error(
+                "controller capability reply has the wrong type",
+            )),
+        }
     }
 
     pub async fn submit(
@@ -1685,6 +1701,33 @@ mod tests {
             Duration::from_millis(20),
             Duration::from_secs(2),
         ));
+        let capability_client = mutsuki_distributed_control_client::DistributedControlClient::new(
+            NodeId("management-client".into()),
+            management_address.clone(),
+            Arc::from(secret.clone().into_bytes()),
+            Duration::from_secs(2),
+        )
+        .expect("capability client config");
+        let proof = loop {
+            match capability_client.capabilities().await {
+                Ok(proof) => break proof,
+                Err(_) if Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Err(error) => panic!("capability handshake: {error:?}"),
+            }
+        };
+        assert_eq!(
+            proof.distributed_host_revision,
+            mutsuki_distributed_contracts::DISTRIBUTED_HOST_REVISION
+        );
+        assert_eq!(
+            proof
+                .feature_proof
+                .get(&mutsuki_distributed_contracts::DistributedFeature::Clustered),
+            Some(&mutsuki_distributed_contracts::CapabilityMaturity::Deployable)
+        );
+        drop(capability_client);
         let client = loop {
             let candidate = ControllerClient::new(
                 NodeId("management-client".into()),

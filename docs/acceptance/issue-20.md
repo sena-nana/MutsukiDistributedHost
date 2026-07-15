@@ -9,6 +9,10 @@ InProcessTest、Deployable、ProductionReady 和 Unavailable。`ReplicatedContro
 
 ## Clustered MVP
 
+认证 management control 面同时公开版本化 `SidecarCapabilityProof`。独立控制客户端互操作测试
+验证 proof 的 source revision 和 Clustered deployable maturity；Durable/Critical/HA/checkpoint/
+trust 仍按 Capability Matrix 返回各自真实成熟度，不能因握手存在而提升能力声明。
+
 `process::tests::independent_process_worker_submits_queries_cancels_pulses_and_drains` 启动三个独立
 OS 进程：管理/Controller 测试进程、Worker 子进程和 content origin 子进程。该测试验证：
 
