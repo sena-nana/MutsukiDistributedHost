@@ -58,6 +58,7 @@ pub enum DistributedCapability {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DistributedFeature {
+    LocalObservation,
     Clustered,
     Durable,
     Critical,
@@ -86,6 +87,10 @@ impl SidecarCapabilityProof {
             distributed_host_revision: DISTRIBUTED_HOST_REVISION.into(),
             capability_level: CapabilityMaturity::Deployable,
             feature_proof: BTreeMap::from([
+                (
+                    DistributedFeature::LocalObservation,
+                    CapabilityMaturity::Deployable,
+                ),
                 (
                     DistributedFeature::Clustered,
                     CapabilityMaturity::Deployable,

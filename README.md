@@ -59,7 +59,7 @@ fencing 决定，不能安全重试的任务结构化失败。
 
 `mutsuki-distributed-control-client` 是产品启动门控使用的瘦客户端。它通过同一认证管理端点读取
 `SidecarCapabilityProof` 和 health，不链接 scheduler/recovery 实现。证明固定包含 capability schema、
-distributed protocol major、release、构建 Git revision，以及 Clustered、Durable、Critical、HA、
+distributed protocol major、release、构建 Git revision，以及 LocalObservation、Clustered、Durable、Critical、HA、
 checkpoint、trust 的逐项 maturity。产品必须同时校验 release/revision 和所需 feature maturity；
 连接失败、旧 revision 或仅有 reference/in-process 证据都不能被解释为可部署能力。
 
