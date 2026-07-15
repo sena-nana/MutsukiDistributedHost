@@ -21,10 +21,11 @@ sha2 = "0.10"
 hmac = "0.12"
 tempfile = "3.23"
 thiserror = "2.0"
-tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 mutsuki-runtime-contracts = { git = "https://github.com/sena-nana/MutsukiCore.git", rev = "63ac3c9479089d5dc0e8b4245838068694f043ad" }
 mutsuki-link-core = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9" }
+mutsuki-link = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9", features = ["local"] }
 mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "f6e142f509555b47ebd4b934f5623e28bb402c5e" }
 mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "f6e142f509555b47ebd4b934f5623e28bb402c5e" }
 

@@ -4,23 +4,58 @@ Mutsuki 的外置分布式 Sidecar。它通过分布式无关的本地 Host cont
 `TaskBatch`，通过认证后的 Mutsuki Link 会话承载远程控制与点对点数据流；它不修改 Core、
 ServiceHost、Runner 或插件执行路径。
 
+## Capability Matrix
+
+本表是公开能力契约；“有类型/有测试”不等于可部署，未列为 Deployable 的能力在 binary
+中必须结构化拒绝。
+
+| 能力 | Contracts | Reference Model | In-process Test | Deployable | Production-ready |
+| --- | --- | --- | --- | --- | --- |
+| Disabled / LocalObservable | ✅ | — | ✅ | ✅ | 否 |
+| 单 Controller + Worker Clustered | ✅ | — | ✅ | ✅ | 否（MVP） |
+| 认证 Link control、capability/pulse、submit/query/cancel | ✅ | — | ✅ | ✅ | 否（仅 local transport） |
+| 点对点 resource/result content stream | ✅ | — | ✅（独立进程） | ✅ | 否（仅 local transport） |
+| PersistentRegistry / Durable | ✅ | ✅ | ✅ | 否 | 否 |
+| Critical durability | ✅ | ✅ | ✅ | 否 | 否 |
+| `ReferenceCftModel` | ✅ | ✅ | ✅ | 否 | 否 |
+| 多 Controller HA | ✅ | ✅ | ✅（conformance only） | 否 | 否 |
+| Recovery / trust policy | ✅ | ✅ | ✅ | 否 | 否 |
+
+当前没有任何能力标记为 Production-ready。`DistributedCapability::maturity()` 提供同一份
+机器可读边界；HA 配置返回 `ExperimentalUnavailable`，不会把参考状态机当作集群。
+
 ## Phase 3 能力
 
 - `mutsuki-distributed-host-adapter`：本地 Host 的 submit/cancel/snapshot/event/drain/health
   适配；当前提供 ServiceHost IPC 实现。
 - `mutsuki-distributed-contracts`：Worker 能力快照、紧凑 pulse、远程 envelope、Attempt
   映射和有界 wire frame。
-- `mutsuki-distributed-runtime`：Disabled / LocalObservable / Clustered 组合、兼容性过滤、
+- `mutsuki-distributed-runtime`：Disabled / LocalObservable、单 Controller Clustered 进程驱动、
   有限 fallback、Worker 资源本地化和从输入重建 Attempt。
-- `mutsuki-distributed-host`：安全的独立进程入口；默认 `disabled`，不会启动网络或后台任务。
+- `mutsuki-distributed-host`：安全的独立进程入口；默认 `disabled`。Clustered 只接受显式
+  deployment JSON，secret 和 ServiceHost token 只通过配置引用的环境变量注入。
 
 ```bash
 cargo run -p mutsuki-distributed-host -- disabled
 cargo test --workspace --all-targets
 ```
 
-Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link session、Worker 集合和
-资源本地化器。仓库不会用匿名明文网络或生产 fallback 猜测这些值。
+Clustered 进程使用：
+
+```text
+mutsuki-distributed-host clustered /absolute/path/to/deployment.json
+```
+
+deployment 的 `role` 只能是 `controller`、`worker` 或 `high_availability`。Controller 配置
+声明 Worker 的 node/address、管理 client node、本地 ServiceHost endpoint，以及 secret/token
+环境变量名；Worker 配置另声明 capability advertisement 与 content directory。配置文件不保存
+secret。`high_availability` 在真实多进程 CFT backend 完成前始终结构化拒绝。
+
+当前可部署 transport 是 MutsukiLink local IPC：连接执行 HMAC 双向身份校验、OS peer credential
+校验和分布式 protocol negotiation。Controller control frame 保持 64 KiB 上限；大内容由 origin
+进程的 `FileContentServer` 直接流向 Worker 的 `LinkResourceLocalizer`，按 256 KiB 分块并在原子
+发布前验证 size 和 SHA-256。断线会关闭 session，后续调用重新认证连接；安全重试由 Attempt
+fencing 决定，不能安全重试的任务结构化失败。
 
 架构与失败语义见 [docs/phase3-architecture.md](docs/phase3-architecture.md)，Issue #1 的验收
 证据见 [docs/acceptance/issue-1.md](docs/acceptance/issue-1.md)。
@@ -38,7 +73,8 @@ Clustered 进程由部署层显式提供本地 Host endpoint/token、认证 Link
 
 ## Phase 5 能力
 
-- 可替换 `CftControlBackend` 与文件持久化参考实现；支持 3 个完整投票节点或 2 个完整节点 + Witness。
+- 可替换 `CftControlBackend` 与文件持久化 `ReferenceCftModel`；支持在进程内 conformance test
+  模拟 3 个完整投票节点或 2 个完整节点 + Witness，但不是跨进程共识 backend。
 - 多数派选举、term/epoch fencing、Follower 查询/转发、旧 Leader 恢复降级。
 - 短 ControlLease 与长 ExecutionGrant 分离；选举期间纯计算继续，新授权 fence 旧结果。
 - Healthy / Impaired / Degraded / QuorumLost / Isolated / SafeStop 明确降级。

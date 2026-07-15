@@ -108,7 +108,7 @@ pub trait CftControlBackend {
     ) -> Result<Vec<CommittedControlRecord>, DistributedError>;
 }
 
-pub struct ReplicatedControlPlane {
+pub struct ReferenceCftModel {
     nodes: BTreeMap<NodeId, ControlNode>,
     links: BTreeMap<(NodeId, NodeId), bool>,
     leader: Option<NodeId>,
@@ -118,7 +118,7 @@ pub struct ReplicatedControlPlane {
     uncommitted_results: Vec<ExecutedUncommittedResult>,
 }
 
-impl ReplicatedControlPlane {
+impl ReferenceCftModel {
     pub fn open(specs: Vec<ControlNodeSpec>) -> Result<Self, DistributedError> {
         let mut nodes = BTreeMap::new();
         for spec in specs {
@@ -560,7 +560,7 @@ impl ReplicatedControlPlane {
     }
 }
 
-impl CftControlBackend for ReplicatedControlPlane {
+impl CftControlBackend for ReferenceCftModel {
     fn leader(&self) -> Option<&NodeId> {
         self.leader.as_ref()
     }
@@ -642,18 +642,14 @@ impl CftControlBackend for ReplicatedControlPlane {
 /// CFT backend fsyncs each accepted record on a quorum, so `sync` does not
 /// change behavior here.
 pub struct CftRegistryReplica {
-    control: Arc<Mutex<ReplicatedControlPlane>>,
+    control: Arc<Mutex<ReferenceCftModel>>,
     ingress: NodeId,
     replica_id: String,
     next_tick: AtomicU64,
 }
 
 impl CftRegistryReplica {
-    pub fn new(
-        control: Arc<Mutex<ReplicatedControlPlane>>,
-        ingress: NodeId,
-        first_tick: u64,
-    ) -> Self {
+    pub fn new(control: Arc<Mutex<ReferenceCftModel>>, ingress: NodeId, first_tick: u64) -> Self {
         Self {
             control,
             replica_id: format!("cft:{}", ingress.0),
@@ -663,7 +659,7 @@ impl CftRegistryReplica {
     }
 
     pub fn restore_registry_wal(
-        control: &ReplicatedControlPlane,
+        control: &ReferenceCftModel,
         node_id: &NodeId,
         destination: impl Into<PathBuf>,
     ) -> Result<(), DistributedError> {

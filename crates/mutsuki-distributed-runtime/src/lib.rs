@@ -6,7 +6,8 @@
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::must_use_candidate,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    clippy::too_many_lines
 )]
 
 use mutsuki_distributed_contracts::{
@@ -34,6 +35,7 @@ use std::sync::{Arc, Mutex};
 mod content_store;
 mod ha_control;
 mod persistent_registry;
+mod process;
 mod recovery;
 mod resource_catalog;
 mod scheduler;
@@ -43,6 +45,7 @@ mod trust_reputation;
 pub use content_store::*;
 pub use ha_control::*;
 pub use persistent_registry::*;
+pub use process::*;
 pub use recovery::*;
 pub use resource_catalog::*;
 pub use scheduler::*;

@@ -26,6 +26,47 @@ pub const DISTRIBUTED_PROTOCOL_ID: &str = "mutsuki.distributed.cluster";
 pub const DISTRIBUTED_PROTOCOL_MAJOR: u16 = 1;
 pub const MAX_CONTROL_FRAME_BYTES: usize = 64 * 1024;
 
+/// Public maturity is a compatibility contract: callers can distinguish a
+/// wire contract or conformance model from something that can be deployed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityMaturity {
+    Contract,
+    ReferenceModel,
+    InProcessTest,
+    Deployable,
+    ProductionReady,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DistributedCapability {
+    LocalObservation,
+    ClusteredSingleController,
+    DurableRegistry,
+    CriticalDurability,
+    CftReferenceModel,
+    HighAvailability,
+    RecoveryPolicy,
+    TrustPolicy,
+}
+
+impl DistributedCapability {
+    pub const fn maturity(self) -> CapabilityMaturity {
+        match self {
+            Self::LocalObservation | Self::ClusteredSingleController => {
+                CapabilityMaturity::Deployable
+            }
+            Self::DurableRegistry => CapabilityMaturity::InProcessTest,
+            Self::CriticalDurability | Self::HighAvailability => CapabilityMaturity::Unavailable,
+            Self::CftReferenceModel | Self::RecoveryPolicy | Self::TrustPolicy => {
+                CapabilityMaturity::ReferenceModel
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DistributionMode {
@@ -137,6 +178,78 @@ pub struct WorkerReply {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClusterRequest {
+    pub request_id: u64,
+    pub command: ClusterCommand,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "command", content = "payload", rename_all = "snake_case")]
+pub enum ClusterCommand {
+    DescribeWorker,
+    WorkerPulse,
+    Worker(Vec<u8>),
+    DrainWorker,
+    StopWorker,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClusterReply {
+    pub request_id: u64,
+    pub result: Result<ClusterReplyBody, WorkerFailure>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "reply", content = "payload", rename_all = "snake_case")]
+pub enum ClusterReplyBody {
+    Worker(Box<WorkerAdvertisement>),
+    Pulse(WorkerPulse),
+    WorkerReply(Vec<u8>),
+    Draining,
+    Stopping,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ControllerRequest {
+    pub request_id: u64,
+    pub command: ControllerCommand,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "command", content = "payload", rename_all = "snake_case")]
+pub enum ControllerCommand {
+    Submit(Box<ControllerSubmit>),
+    Cancel(GlobalTaskId),
+    Outcome(GlobalTaskId),
+    Health,
+    Shutdown,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ControllerSubmit {
+    pub global_task_id: GlobalTaskId,
+    pub portable: PortableTask,
+    pub requirements: RequirementSet,
+    pub direct_inputs: Vec<DirectDataRef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ControllerReply {
+    pub request_id: u64,
+    pub result: Result<ControllerReplyBody, WorkerFailure>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "reply", content = "payload", rename_all = "snake_case")]
+pub enum ControllerReplyBody {
+    Placement(TaskPlacement),
+    Cancelled,
+    Outcome(Option<LocalTaskOutcome>),
+    Health(String),
+    ShuttingDown,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "reply", content = "payload", rename_all = "snake_case")]
 pub enum WorkerReplyBody {
     Accepted(RemoteAccepted),
@@ -222,6 +335,7 @@ pub fn can_restart_from_input(portable: &PortableTask) -> bool {
 #[serde(rename_all = "snake_case")]
 pub enum DistributedErrorKind {
     Disabled,
+    ExperimentalUnavailable,
     InvalidConfig,
     CapacityExceeded,
     HostUnavailable,

@@ -1,6 +1,6 @@
 [package]
 name = "mutsuki-distributed-host"
-description = "External Mutsuki Distributed Host sidecar process"
+description = "Single-controller Mutsuki Distributed Host sidecar process"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,8 @@ repository.workspace = true
 mutsuki-distributed-contracts.workspace = true
 mutsuki-distributed-host-adapter.workspace = true
 mutsuki-distributed-runtime.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [lints]

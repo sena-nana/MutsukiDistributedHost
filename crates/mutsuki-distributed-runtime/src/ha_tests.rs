@@ -81,7 +81,7 @@ fn durable_spec(id: &str) -> DurableTaskSpec {
 fn leader_kill_elects_successor_and_fences_the_recovered_old_leader() {
     let temp = TempDir::new().unwrap();
     let cluster_specs = three_full(&temp);
-    let mut cluster = ReplicatedControlPlane::open(cluster_specs.clone()).unwrap();
+    let mut cluster = ReferenceCftModel::open(cluster_specs.clone()).unwrap();
     assert_eq!(cluster.elect(&node("node-a")).unwrap(), 1);
     cluster
         .renew_control_lease(&node("node-a"), 0, 100)
@@ -163,7 +163,7 @@ fn leader_kill_elects_successor_and_fences_the_recovered_old_leader() {
     cluster.validate_result(&renewed, 31).unwrap();
 
     drop(cluster);
-    let mut reopened = ReplicatedControlPlane::open(cluster_specs).unwrap();
+    let mut reopened = ReferenceCftModel::open(cluster_specs).unwrap();
     reopened.validate_result(&renewed, 31).unwrap();
     assert!(reopened.elect(&node("node-b")).unwrap() >= 3);
     assert!(
@@ -178,7 +178,7 @@ fn leader_kill_elects_successor_and_fences_the_recovered_old_leader() {
 #[test]
 fn quorum_loss_blocks_global_writes_but_valid_grants_continue_and_reconcile() {
     let temp = TempDir::new().unwrap();
-    let mut cluster = ReplicatedControlPlane::open(three_full(&temp)).unwrap();
+    let mut cluster = ReferenceCftModel::open(three_full(&temp)).unwrap();
     cluster.elect(&node("node-a")).unwrap();
     cluster
         .renew_control_lease(&node("node-a"), 0, 100)
@@ -273,7 +273,7 @@ fn quorum_loss_blocks_global_writes_but_valid_grants_continue_and_reconcile() {
 #[test]
 fn two_full_nodes_and_witness_form_quorum_without_allowing_witness_leadership() {
     let temp = TempDir::new().unwrap();
-    let mut cluster = ReplicatedControlPlane::open(specs(
+    let mut cluster = ReferenceCftModel::open(specs(
         &temp,
         &[
             ("node-a", ControlNodeKind::Full),
@@ -292,7 +292,7 @@ fn two_full_nodes_and_witness_form_quorum_without_allowing_witness_leadership() 
 #[test]
 fn short_control_lease_expires_before_longer_execution_grant() {
     let temp = TempDir::new().unwrap();
-    let mut cluster = ReplicatedControlPlane::open(three_full(&temp)).unwrap();
+    let mut cluster = ReferenceCftModel::open(three_full(&temp)).unwrap();
     cluster.elect(&node("node-a")).unwrap();
     cluster.renew_control_lease(&node("node-a"), 0, 5).unwrap();
     let grant = cluster
@@ -326,7 +326,7 @@ fn short_control_lease_expires_before_longer_execution_grant() {
 #[test]
 fn isolated_node_cannot_self_elect_from_its_own_log() {
     let temp = TempDir::new().unwrap();
-    let mut cluster = ReplicatedControlPlane::open(three_full(&temp)).unwrap();
+    let mut cluster = ReferenceCftModel::open(three_full(&temp)).unwrap();
     cluster.elect(&node("node-a")).unwrap();
     cluster.isolate(&node("node-c"), true).unwrap();
     assert_eq!(
@@ -338,7 +338,7 @@ fn isolated_node_cannot_self_elect_from_its_own_log() {
 #[test]
 fn control_log_is_bounded_and_queries_are_available_on_every_management_node() {
     let temp = TempDir::new().unwrap();
-    let mut cluster = ReplicatedControlPlane::open(three_full(&temp)).unwrap();
+    let mut cluster = ReferenceCftModel::open(three_full(&temp)).unwrap();
     cluster.elect(&node("node-a")).unwrap();
     cluster
         .renew_control_lease(&node("node-a"), 0, 100)
@@ -372,7 +372,7 @@ fn control_log_is_bounded_and_queries_are_available_on_every_management_node() {
 #[test]
 fn phase4_registry_records_roundtrip_through_the_cft_backend() {
     let temp = TempDir::new().unwrap();
-    let mut control = ReplicatedControlPlane::open(three_full(&temp)).unwrap();
+    let mut control = ReferenceCftModel::open(three_full(&temp)).unwrap();
     control.elect(&node("node-a")).unwrap();
     control
         .renew_control_lease(&node("node-a"), 0, 100)
@@ -507,7 +507,7 @@ fn leadership_preference_requires_health_margin_and_sustained_hysteresis() {
 #[test]
 fn availability_distinguishes_impaired_degraded_quorum_lost_and_safe_stop() {
     let temp = TempDir::new().unwrap();
-    let mut cluster = ReplicatedControlPlane::open(specs(
+    let mut cluster = ReferenceCftModel::open(specs(
         &temp,
         &[
             ("a", ControlNodeKind::Full),

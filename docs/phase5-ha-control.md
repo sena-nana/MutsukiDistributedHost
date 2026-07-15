@@ -2,7 +2,7 @@
 
 ## CFT 后端与节点角色
 
-`CftControlBackend` 是可替换边界；仓库内的 `ReplicatedControlPlane` 是文件持久化的小集群 CFT 参考
+`CftControlBackend` 是可替换边界；仓库内的 `ReferenceCftModel` 是文件持久化的小集群 CFT 参考
 实现。它只复制有界权威元数据，默认接受以下拓扑：
 
 - 3 个或更多 Full 投票节点；或
