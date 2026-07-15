@@ -1597,6 +1597,7 @@ fn ensure_parent(path: &Path) -> Result<(), DistributedError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn sync_parent(path: &Path) -> Result<(), DistributedError> {
     let Some(parent) = path.parent() else {
         return Ok(());
@@ -1604,6 +1605,16 @@ fn sync_parent(path: &Path) -> Result<(), DistributedError> {
     File::open(parent)
         .and_then(|file| file.sync_all())
         .map_err(|_| registry_storage_error())
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_path: &Path) -> Result<(), DistributedError> {
+    // Windows cannot open a directory through the ordinary File API used by
+    // std, and FlushFileBuffers is specified for file handles rather than
+    // directory metadata. The snapshot file itself was synced before the
+    // atomic rename, so there is no supported parent-directory flush to add
+    // here without pretending that a failed directory operation is durable.
+    Ok(())
 }
 
 fn validate_replica_ids(replicas: &[Arc<dyn MetadataReplica>]) -> Result<(), DistributedError> {
