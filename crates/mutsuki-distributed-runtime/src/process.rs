@@ -556,8 +556,16 @@ impl WorkerProcess {
                 connection.abort();
                 continue;
             }
-            if self.serve_connection(&mut connection).await? {
-                return Ok(());
+            match self.serve_connection(&mut connection).await {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(error)
+                    if matches!(
+                        error.kind,
+                        DistributedErrorKind::TransportClosed
+                            | DistributedErrorKind::WorkerUnavailable
+                    ) => {}
+                Err(error) => return Err(error),
             }
         }
     }
@@ -1735,6 +1743,7 @@ mod tests {
             .await
             .expect("cancel child Worker task");
         assert!(controller.pulse_once().await.is_empty());
+
         client.shutdown().await.expect("shutdown controller");
         server
             .await
@@ -1747,5 +1756,62 @@ mod tests {
             .wait()
             .expect("wait for content origin process");
         assert!(content_status.success());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn independent_process_link_loss_is_structured_and_marks_worker_unreachable() {
+        let unique = now_millis();
+        let address = format!("mutsuki-distributed-disconnect-{unique}");
+        let secret = format!("issue20-disconnect-secret-at-least-thirty-two-{unique}");
+        let destination = tempfile::tempdir().expect("disconnect tempdir");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "process::tests::process_worker_child",
+                "--nocapture",
+            ])
+            .env("MUTSUKI_TEST_WORKER_ADDRESS", &address)
+            .env("MUTSUKI_TEST_CLUSTER_SECRET", &secret)
+            .env("MUTSUKI_TEST_CONTENT_DESTINATION", destination.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("spawn disconnect Worker");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let controller = loop {
+            match ControllerProcess::connect(
+                NodeId("controller-process".into()),
+                Arc::new(ProcessFakeHost::default()),
+                vec![WorkerConnectionConfig {
+                    node_id: NodeId("worker-process".into()),
+                    address: address.clone(),
+                }],
+                Arc::from(secret.clone().into_bytes()),
+                4,
+                Duration::from_secs(2),
+            )
+            .await
+            {
+                Ok(controller) => break controller,
+                Err(_) if Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Err(error) => panic!("connect disconnect Worker: {error:?}"),
+            }
+        };
+        child.kill().expect("kill Worker process");
+        child.wait().expect("reap killed Worker");
+        assert_eq!(controller.pulse_once().await.len(), 1);
+        assert_eq!(
+            controller
+                .registry
+                .lock()
+                .expect("Worker registry")
+                .get(&NodeId("worker-process".into()))
+                .expect("Worker snapshot")
+                .health,
+            WorkerHealth::Unreachable
+        );
     }
 }

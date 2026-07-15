@@ -22,6 +22,10 @@ OS 进程：管理/Controller 测试进程、Worker 子进程和 content origin 
 - transport 关闭返回结构化错误，后续请求会重新建立并认证 session；Coordinator 仅对满足
   portability/retry-safety 的任务创建新 Attempt，旧结果继续由 attempt fencing 拒绝。
 
+`process::tests::independent_process_link_loss_is_structured_and_marks_worker_unreachable` 另外
+直接终止 Worker OS 进程，验证下一次 pulse 返回结构化失败并把 registry 中的 Worker 标记为
+`Unreachable`，不会继续以陈旧 Ready snapshot 调度。
+
 ## HA gate
 
 当前 HA 没有启用。既有选举、隔离、恢复、term/epoch fencing 测试只覆盖
