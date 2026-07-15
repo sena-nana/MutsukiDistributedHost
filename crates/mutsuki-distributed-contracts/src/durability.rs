@@ -103,6 +103,17 @@ pub struct AcceptanceReceipt {
     pub state: GlobalTaskState,
     pub metadata_copies: usize,
     pub input_copies: usize,
+    /// The committed registry transaction proving this acceptance decision.
+    pub transaction_id: String,
+    pub log_index: u64,
+    pub replica_commits: Vec<MetadataCommitProof>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MetadataCommitProof {
+    pub replica_id: String,
+    pub transaction_id: String,
+    pub log_index: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

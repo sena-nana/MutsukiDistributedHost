@@ -1,0 +1,23 @@
+{
+  "issue": 19,
+  "date": "2026-07-15",
+  "profile": "cargo bench optimized",
+  "runs": [
+    {
+      "mutations": 100000,
+      "tasks": 25000,
+      "mutation_seconds": 1.276429,
+      "mutations_per_second": 78343,
+      "reopen_seconds": 0.122532,
+      "wal_bytes_after_compaction": 0
+    },
+    {
+      "mutations": 1000000,
+      "tasks": 250000,
+      "mutation_seconds": 12.947083,
+      "mutations_per_second": 77237,
+      "reopen_seconds": 1.263300,
+      "wal_bytes_after_compaction": 0
+    }
+  ]
+}

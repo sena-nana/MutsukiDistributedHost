@@ -288,6 +288,9 @@ const fn protocol_error() -> DistributedError {
 pub struct DistributedError {
     pub kind: DistributedErrorKind,
     pub public_message: &'static str,
+    /// Non-sensitive operator context. Worker-facing failures intentionally do
+    /// not forward this field.
+    pub detail: Option<String>,
 }
 
 impl DistributedError {
@@ -295,7 +298,14 @@ impl DistributedError {
         Self {
             kind,
             public_message,
+            detail: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 }
 

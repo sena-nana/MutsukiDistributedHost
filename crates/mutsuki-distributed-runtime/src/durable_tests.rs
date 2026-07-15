@@ -9,8 +9,60 @@ use mutsuki_runtime_contracts::{
 };
 use serde_json::json;
 use std::fs;
-use std::sync::Arc;
+use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Barrier, Mutex};
 use tempfile::TempDir;
+
+struct ScriptedReplica {
+    id: String,
+    failures_remaining: AtomicUsize,
+    calls: Mutex<Vec<(String, u64)>>,
+}
+
+impl ScriptedReplica {
+    fn new(id: &str, failures: usize) -> Self {
+        Self {
+            id: id.into(),
+            failures_remaining: AtomicUsize::new(failures),
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl MetadataReplica for ScriptedReplica {
+    fn replica_id(&self) -> &str {
+        &self.id
+    }
+
+    fn commit(
+        &self,
+        transaction: &MetadataTransaction,
+        _sync: bool,
+    ) -> Result<ReplicaCommitAck, DistributedError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((transaction.transaction_id.clone(), transaction.log_index));
+        if self
+            .failures_remaining
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+                remaining.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(DistributedError::new(
+                DistributedErrorKind::Storage,
+                "injected replica failure",
+            ));
+        }
+        Ok(ReplicaCommitAck {
+            replica_id: self.id.clone(),
+            transaction_id: transaction.transaction_id.clone(),
+            log_index: transaction.log_index,
+        })
+    }
+}
 
 fn portable(input: ContentId) -> PortableTask {
     let mut task = Task::new(
@@ -272,6 +324,12 @@ fn acceptance_modes_are_explicit_and_durable_records_survive_entry_loss() {
     assert_eq!(receipt.state, GlobalTaskState::Persisted);
     assert_eq!(receipt.metadata_copies, 2);
     assert_eq!(receipt.input_copies, 2);
+    assert_eq!(receipt.log_index, 1);
+    assert_eq!(receipt.replica_commits.len(), 1);
+    assert_eq!(
+        receipt.replica_commits[0].transaction_id,
+        receipt.transaction_id
+    );
     drop(primary);
     drop(replica);
 
@@ -605,15 +663,342 @@ fn large_input_bytes_never_enter_the_registry_log() {
 }
 
 #[test]
-fn corrupt_registry_tail_is_rejected_instead_of_silently_discarded() {
+fn half_written_registry_tail_is_truncated_without_losing_committed_state() {
     let temp = TempDir::new().unwrap();
     let path = temp.path().join("registry.wal");
-    fs::write(&path, b"{\"mutation\":\"submit\"").unwrap();
+    let store = ContentStore::open(temp.path().join("content"), 4).unwrap();
+    let (manifest, _) = store
+        .put_bytes(b"tail", "blob", ResourcePolicy::Reconstructible)
+        .unwrap();
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(manifest.clone(), vec![healthy_node("origin")], 1, 0)
+        .unwrap();
+    let registry = PersistentRegistry::open(&path, Vec::new(), 8).unwrap();
+    registry
+        .submit(
+            spec("tail", manifest.content_id, AcceptanceMode::Fast),
+            &catalog,
+        )
+        .unwrap();
+    drop(registry);
+    let committed = fs::read(&path).unwrap();
+    let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    file.write_all(&committed[..committed.len() / 3]).unwrap();
+    file.sync_all().unwrap();
+
+    let reopened = PersistentRegistry::open(&path, Vec::new(), 8).unwrap();
+    assert!(reopened.query(&GlobalTaskId("tail".into())).is_some());
+    assert!(reopened.stats().unwrap().recovered_tail_bytes > 0);
+    assert_eq!(fs::metadata(path).unwrap().len(), committed.len() as u64);
+}
+
+#[test]
+fn checksum_corruption_reports_the_exact_frame_offset() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("registry.wal");
+    let store = ContentStore::open(temp.path().join("content"), 4).unwrap();
+    let (manifest, _) = store
+        .put_bytes(b"checksum", "blob", ResourcePolicy::Reconstructible)
+        .unwrap();
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(manifest.clone(), vec![healthy_node("origin")], 1, 0)
+        .unwrap();
+    PersistentRegistry::open(&path, Vec::new(), 8)
+        .unwrap()
+        .submit(
+            spec("checksum", manifest.content_id, AcceptanceMode::Fast),
+            &catalog,
+        )
+        .unwrap();
+    let mut bytes = fs::read(&path).unwrap();
+    bytes[32] ^= 0x5a;
+    fs::write(&path, bytes).unwrap();
+    let error = PersistentRegistry::open(path, Vec::new(), 8).err().unwrap();
+    assert_eq!(error.kind, DistributedErrorKind::Corrupt);
     assert_eq!(
-        PersistentRegistry::open(path, Vec::new(), 8)
-            .err()
-            .unwrap()
-            .kind,
-        DistributedErrorKind::Corrupt
+        error.detail.as_deref(),
+        Some("WAL corruption at byte offset 0")
     );
+}
+
+#[test]
+fn failed_local_prepare_or_commit_never_publishes_memory_or_replay_state() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("registry.wal");
+    let store = ContentStore::open(temp.path().join("content"), 4).unwrap();
+    let (manifest, _) = store
+        .put_bytes(b"local-failure", "blob", ResourcePolicy::Reconstructible)
+        .unwrap();
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(manifest.clone(), vec![healthy_node("origin")], 1, 0)
+        .unwrap();
+
+    let registry = PersistentRegistry::open(&path, Vec::new(), 8).unwrap();
+    registry.inject_next_local_write_failure();
+    assert_eq!(
+        registry
+            .submit(
+                spec(
+                    "prepare-fails",
+                    manifest.content_id.clone(),
+                    AcceptanceMode::Fast
+                ),
+                &catalog,
+            )
+            .unwrap_err()
+            .kind,
+        DistributedErrorKind::Storage
+    );
+    assert!(
+        registry
+            .query(&GlobalTaskId("prepare-fails".into()))
+            .is_none()
+    );
+
+    registry.inject_local_write_failure_after(1);
+    let commit_failure_spec = spec("commit-fails", manifest.content_id, AcceptanceMode::Fast);
+    assert_eq!(
+        registry
+            .submit(commit_failure_spec.clone(), &catalog)
+            .unwrap_err()
+            .kind,
+        DistributedErrorKind::Storage
+    );
+    assert!(
+        registry
+            .query(&GlobalTaskId("commit-fails".into()))
+            .is_none()
+    );
+    drop(registry);
+    let reopened = PersistentRegistry::open(path, Vec::new(), 8).unwrap();
+    assert!(
+        reopened
+            .query(&GlobalTaskId("prepare-fails".into()))
+            .is_none()
+    );
+    assert!(
+        reopened
+            .query(&GlobalTaskId("commit-fails".into()))
+            .is_none()
+    );
+    reopened.submit(commit_failure_spec, &catalog).unwrap();
+    assert!(
+        reopened
+            .query(&GlobalTaskId("commit-fails".into()))
+            .is_some()
+    );
+}
+
+#[test]
+fn replica_selection_skips_failures_and_retry_reuses_the_transaction() {
+    let temp = TempDir::new().unwrap();
+    let (input, _a, _b) = two_copy_resource(&temp, "replica-input", b"replica-input");
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(
+            input.clone(),
+            vec![healthy_node("a"), healthy_node("b")],
+            1,
+            0,
+        )
+        .unwrap();
+    let first = Arc::new(ScriptedReplica::new("first", usize::MAX));
+    let second = Arc::new(ScriptedReplica::new("second", 0));
+    let registry = PersistentRegistry::open(
+        temp.path().join("registry.wal"),
+        vec![first.clone(), second.clone()],
+        8,
+    )
+    .unwrap();
+    let receipt = registry
+        .submit(
+            spec(
+                "fallback",
+                input.content_id.clone(),
+                AcceptanceMode::Durable,
+            ),
+            &catalog,
+        )
+        .unwrap();
+    assert_eq!(receipt.replica_commits.len(), 1);
+    assert_eq!(receipt.replica_commits[0].replica_id, "second");
+    let report = registry.last_commit_report().unwrap();
+    assert_eq!(report.replica_attempts.len(), 2);
+    assert!(matches!(
+        report.replica_attempts[0].outcome,
+        ReplicaCommitOutcome::Failed(DistributedErrorKind::Storage)
+    ));
+
+    let flaky = Arc::new(ScriptedReplica::new("flaky", 1));
+    let retry_registry =
+        PersistentRegistry::open(temp.path().join("retry.wal"), vec![flaky.clone()], 8).unwrap();
+    let retry_spec = spec(
+        "retry-same-transaction",
+        input.content_id,
+        AcceptanceMode::Durable,
+    );
+    let first_error = retry_registry
+        .submit(retry_spec.clone(), &catalog)
+        .unwrap_err();
+    assert_eq!(
+        first_error.kind,
+        DistributedErrorKind::DurabilityUnavailable
+    );
+    let receipt = retry_registry.submit(retry_spec, &catalog).unwrap();
+    let calls = flaky.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0], calls[1]);
+    assert_eq!(receipt.transaction_id, calls[0].0);
+}
+
+#[test]
+fn replica_leading_local_commit_failure_recovers_the_prepared_transaction() {
+    let temp = TempDir::new().unwrap();
+    let (input, _a, _b) = two_copy_resource(&temp, "leading-input", b"leading-input");
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(
+            input.clone(),
+            vec![healthy_node("a"), healthy_node("b")],
+            1,
+            0,
+        )
+        .unwrap();
+    let primary_path = temp.path().join("primary.wal");
+    let replica_path = temp.path().join("replica.wal");
+    let replica = Arc::new(FileMetadataReplica::open(&replica_path).unwrap());
+    let registry = PersistentRegistry::open(&primary_path, vec![replica], 8).unwrap();
+    let durable_spec = spec("replica-leading", input.content_id, AcceptanceMode::Durable);
+    registry.inject_local_write_failure_after(1);
+    assert_eq!(
+        registry
+            .submit(durable_spec.clone(), &catalog)
+            .unwrap_err()
+            .kind,
+        DistributedErrorKind::Storage
+    );
+    let failed_report = registry.last_commit_report().unwrap();
+    assert!(!failed_report.local_committed);
+    assert!(matches!(
+        failed_report.replica_attempts[0].outcome,
+        ReplicaCommitOutcome::Committed(_)
+    ));
+    drop(registry);
+
+    let replica = Arc::new(FileMetadataReplica::open(&replica_path).unwrap());
+    let recovered = PersistentRegistry::open(&primary_path, vec![replica], 8).unwrap();
+    assert!(
+        recovered
+            .query(&GlobalTaskId("replica-leading".into()))
+            .is_none()
+    );
+    let receipt = recovered.submit(durable_spec, &catalog).unwrap();
+    assert_eq!(receipt.transaction_id, failed_report.transaction_id);
+    assert_eq!(receipt.log_index, failed_report.log_index);
+    assert!(
+        recovered
+            .query(&GlobalTaskId("replica-leading".into()))
+            .is_some()
+    );
+}
+
+#[test]
+fn concurrent_transitions_linearize_and_replay_to_the_same_record() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("registry.wal");
+    let store = ContentStore::open(temp.path().join("content"), 4).unwrap();
+    let (manifest, _) = store
+        .put_bytes(b"race", "blob", ResourcePolicy::Reconstructible)
+        .unwrap();
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(manifest.clone(), vec![healthy_node("origin")], 1, 0)
+        .unwrap();
+    let registry = Arc::new(PersistentRegistry::open(&path, Vec::new(), 8).unwrap());
+    let task_id = GlobalTaskId("linearized".into());
+    registry
+        .submit(
+            spec("linearized", manifest.content_id, AcceptanceMode::Fast),
+            &catalog,
+        )
+        .unwrap();
+    let barrier = Arc::new(Barrier::new(33));
+    let mut workers = Vec::new();
+    for _ in 0..32 {
+        let registry = Arc::clone(&registry);
+        let barrier = Arc::clone(&barrier);
+        let task_id = task_id.clone();
+        workers.push(std::thread::spawn(move || {
+            barrier.wait();
+            registry.assign(&task_id, 1, NodeId("worker".into()), None, 1)
+        }));
+    }
+    barrier.wait();
+    let successes = workers
+        .into_iter()
+        .flat_map(|worker| worker.join().unwrap())
+        .count();
+    assert_eq!(successes, 1);
+    let before = registry.query(&task_id).unwrap();
+    drop(registry);
+    let reopened = PersistentRegistry::open(path, Vec::new(), 8).unwrap();
+    assert_eq!(reopened.query(&task_id), Some(before));
+    assert_eq!(reopened.stats().unwrap().last_log_index, 2);
+}
+
+#[test]
+fn snapshot_compaction_recovers_before_and_after_wal_rotation() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("registry.wal");
+    let store = ContentStore::open(temp.path().join("content"), 4).unwrap();
+    let (manifest, _) = store
+        .put_bytes(b"snapshot", "blob", ResourcePolicy::Reconstructible)
+        .unwrap();
+    let mut catalog = ResourceCatalog::open(temp.path().join("catalog.json"), 8, 2).unwrap();
+    catalog
+        .register(manifest.clone(), vec![healthy_node("origin")], 1, 0)
+        .unwrap();
+    let options = RegistryOptions {
+        max_tasks: 8,
+        max_record_bytes: 64 * 1024,
+        compact_after_records: 2,
+        compact_after_bytes: u64::MAX,
+    };
+    let registry = PersistentRegistry::open_with_options(&path, Vec::new(), options).unwrap();
+    registry
+        .submit(
+            spec(
+                "snapshot-a",
+                manifest.content_id.clone(),
+                AcceptanceMode::Fast,
+            ),
+            &catalog,
+        )
+        .unwrap();
+    let pre_compaction_wal = fs::read(&path).unwrap();
+    registry
+        .submit(
+            spec("snapshot-b", manifest.content_id, AcceptanceMode::Fast),
+            &catalog,
+        )
+        .unwrap();
+    let stats = registry.stats().unwrap();
+    assert_eq!(stats.wal_transactions, 0);
+    assert_eq!(stats.wal_bytes, 0);
+    assert!(stats.snapshot_path.exists());
+    drop(registry);
+
+    fs::write(&path, pre_compaction_wal).unwrap();
+    fs::write(
+        format!("{}.snapshot.tmp", path.display()),
+        b"interrupted snapshot",
+    )
+    .unwrap();
+    let reopened = PersistentRegistry::open_with_options(&path, Vec::new(), options).unwrap();
+    assert!(reopened.query(&GlobalTaskId("snapshot-a".into())).is_some());
+    assert!(reopened.query(&GlobalTaskId("snapshot-b".into())).is_some());
+    assert_eq!(reopened.stats().unwrap().last_log_index, 2);
 }

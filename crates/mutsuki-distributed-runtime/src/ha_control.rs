@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::MetadataReplica;
+use crate::{MetadataReplica, MetadataTransaction, ReplicaCommitAck};
 
 const MAX_CONSENSUS_RECORD_BYTES: usize = 64 * 1024;
 const MAX_UNCOMMITTED_RESULTS: usize = 4096;
@@ -644,8 +644,8 @@ impl CftControlBackend for ReplicatedControlPlane {
 pub struct CftRegistryReplica {
     control: Arc<Mutex<ReplicatedControlPlane>>,
     ingress: NodeId,
+    replica_id: String,
     next_tick: AtomicU64,
-    sequence: AtomicU64,
 }
 
 impl CftRegistryReplica {
@@ -656,9 +656,9 @@ impl CftRegistryReplica {
     ) -> Self {
         Self {
             control,
+            replica_id: format!("cft:{}", ingress.0),
             ingress,
             next_tick: AtomicU64::new(first_tick),
-            sequence: AtomicU64::new(1),
         }
     }
 
@@ -678,9 +678,13 @@ impl CftRegistryReplica {
             .open(destination)
             .map_err(|_| control_storage_error())?;
         for entry in control.committed_records(node_id)? {
-            if let Some(registry_record) = entry.record.metadata.get("registry_record") {
-                file.write_all(registry_record.as_bytes())
-                    .and_then(|()| file.write_all(b"\n"))
+            if let Some(prepare_payload) = entry.record.metadata.get("registry_prepare") {
+                let (_, _, prepare, commit) =
+                    crate::persistent_registry::committed_frames_from_prepare_payload(
+                        prepare_payload.as_bytes(),
+                    )?;
+                file.write_all(&prepare)
+                    .and_then(|()| file.write_all(&commit))
                     .map_err(|_| control_storage_error())?;
             }
         }
@@ -689,23 +693,59 @@ impl CftRegistryReplica {
 }
 
 impl MetadataReplica for CftRegistryReplica {
-    fn append(&self, record: &[u8], _sync: bool) -> Result<(), DistributedError> {
-        let record = std::str::from_utf8(record).map_err(|_| control_corrupt_error())?;
-        let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
+    fn replica_id(&self) -> &str {
+        &self.replica_id
+    }
+
+    fn commit(
+        &self,
+        transaction: &MetadataTransaction,
+        _sync: bool,
+    ) -> Result<ReplicaCommitAck, DistributedError> {
+        let prepare = std::str::from_utf8(&transaction.prepare_payload)
+            .map_err(|_| control_corrupt_error())?;
         let tick = self.next_tick.fetch_add(1, Ordering::Relaxed);
-        self.control
-            .lock()
-            .expect("CFT registry replica mutex")
-            .propose_from(
-                &self.ingress,
-                ControlRecord {
-                    record_id: format!("registry:{sequence}"),
-                    kind: ControlRecordKind::GlobalTask,
-                    metadata: BTreeMap::from([("registry_record".into(), record.to_owned())]),
-                },
-                tick,
-            )?;
-        Ok(())
+        let mut control = self.control.lock().expect("CFT registry replica mutex");
+        for entry in control.committed_records(&self.ingress)? {
+            let metadata = &entry.record.metadata;
+            if metadata.get("registry_log_index") == Some(&transaction.log_index.to_string()) {
+                if metadata.get("registry_transaction_id") == Some(&transaction.transaction_id) {
+                    return Ok(ReplicaCommitAck {
+                        replica_id: self.replica_id.clone(),
+                        transaction_id: transaction.transaction_id.clone(),
+                        log_index: transaction.log_index,
+                    });
+                }
+                return Err(DistributedError::new(
+                    DistributedErrorKind::Conflict,
+                    "CFT replica log index belongs to another transaction",
+                ));
+            }
+        }
+        control.propose_from(
+            &self.ingress,
+            ControlRecord {
+                record_id: format!("registry:{}", transaction.transaction_id),
+                kind: ControlRecordKind::GlobalTask,
+                metadata: BTreeMap::from([
+                    ("registry_prepare".into(), prepare.to_owned()),
+                    (
+                        "registry_transaction_id".into(),
+                        transaction.transaction_id.clone(),
+                    ),
+                    (
+                        "registry_log_index".into(),
+                        transaction.log_index.to_string(),
+                    ),
+                ]),
+            },
+            tick,
+        )?;
+        Ok(ReplicaCommitAck {
+            replica_id: self.replica_id.clone(),
+            transaction_id: transaction.transaction_id.clone(),
+            log_index: transaction.log_index,
+        })
     }
 }
 
