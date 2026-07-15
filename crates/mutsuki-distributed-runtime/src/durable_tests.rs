@@ -950,7 +950,7 @@ fn concurrent_transitions_linearize_and_replay_to_the_same_record() {
 }
 
 #[test]
-fn snapshot_compaction_recovers_before_and_after_wal_rotation() {
+fn snapshot_compaction_recovers_before_and_after_wal_truncation() {
     let temp = TempDir::new().unwrap();
     let path = temp.path().join("registry.wal");
     let store = ContentStore::open(temp.path().join("content"), 4).unwrap();

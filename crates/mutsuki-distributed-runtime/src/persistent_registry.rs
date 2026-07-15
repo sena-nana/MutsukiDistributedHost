@@ -264,7 +264,6 @@ struct RegistryState {
 }
 
 pub struct PersistentRegistry {
-    path: PathBuf,
     snapshot_path: PathBuf,
     state: Mutex<RegistryState>,
     replicas: Vec<Arc<dyn MetadataReplica>>,
@@ -301,7 +300,6 @@ impl PersistentRegistry {
         }
         let recovered_tail_bytes = recovered.recovered_tail_bytes;
         Ok(Self {
-            path,
             snapshot_path,
             state: Mutex::new(RegistryState {
                 wal,
@@ -877,7 +875,11 @@ impl PersistentRegistry {
             &snapshot,
             self.options.max_record_bytes,
         )?;
-        state.wal.replace_with_empty(&self.path)?;
+        // The durable snapshot is already authoritative. Truncating the open
+        // handle avoids Windows' prohibition on replacing an open file; a
+        // crash before, during, or after this point replays either the old WAL
+        // (skipping included indices) or the empty WAL from the snapshot.
+        state.wal.truncate(0)?;
         state.wal_transactions = 0;
         Ok(())
     }
@@ -1572,28 +1574,8 @@ impl WalFile {
         self.file
             .set_len(length)
             .and_then(|()| self.file.seek(SeekFrom::End(0)).map(|_| ()))
-            .and_then(|()| self.file.sync_data())
+            .and_then(|()| self.file.sync_all())
             .map_err(|_| registry_storage_error())
-    }
-
-    fn replace_with_empty(&mut self, path: &Path) -> Result<(), DistributedError> {
-        let temp = PathBuf::from(format!("{}.compact.tmp", path.display()));
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .read(true)
-            .write(true)
-            .open(&temp)
-            .map_err(|_| registry_storage_error())?;
-        file.sync_all().map_err(|_| registry_storage_error())?;
-        fs::rename(&temp, path).map_err(|_| registry_storage_error())?;
-        sync_parent(path)?;
-        self.file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .map_err(|_| registry_storage_error())?;
-        Ok(())
     }
 }
 

@@ -65,7 +65,8 @@ Phase 4 不实现 quorum、自动 Leader 接管、checkpoint 迁移或 exactly-o
 ## 压缩与恢复
 
 `RegistryOptions` 以 committed transaction 数和 WAL bytes 两个阈值触发 snapshot。snapshot 临时文件
-写入并 fsync 后原子 rename，再 fsync 父目录；只有 snapshot 发布成功后才原子轮换空 WAL。snapshot
+写入并 fsync 后原子 rename，再 fsync 父目录；只有 snapshot 发布成功后才在现有句柄上 truncate WAL
+并 `sync_all`，避免 Windows 无法覆盖已打开文件，同时保持任一 truncate crash window 可恢复。snapshot
 记录 `last_included_log_index`，因此任一 crash window 都可选择旧 snapshot + 旧 WAL，或新 snapshot +
 旧/新 WAL 恢复，不会重复应用 mutation。详细故障矩阵与长期运行证据见
 [Issue #19 验收](acceptance/issue-19.md)。
