@@ -23,10 +23,10 @@ tempfile = "3.23"
 thiserror = "2.0"
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "sync", "time"] }
 
-mutsuki-runtime-contracts = { git = "https://github.com/sena-nana/MutsukiCore.git", rev = "de7d2d4cf326fbffceb223897bbeef8aaef67bbe" }
+mutsuki-runtime-contracts = { git = "https://github.com/sena-nana/MutsukiCore.git", rev = "63ac3c9479089d5dc0e8b4245838068694f043ad" }
 mutsuki-link-core = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9" }
-mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "e95dd06c5f6af007814887771df7da1afa14aad7" }
-mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "e95dd06c5f6af007814887771df7da1afa14aad7" }
+mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "f6e142f509555b47ebd4b934f5623e28bb402c5e" }
+mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "f6e142f509555b47ebd4b934f5623e28bb402c5e" }
 
 mutsuki-distributed-contracts = { path = "crates/mutsuki-distributed-contracts" }
 mutsuki-distributed-host-adapter = { path = "crates/mutsuki-distributed-host-adapter" }
