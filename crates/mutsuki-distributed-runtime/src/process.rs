@@ -1694,7 +1694,7 @@ mod tests {
         });
 
         let management_address = format!("mutsuki-distributed-management-{unique}");
-        let server = tokio::spawn(controller.clone().serve_management(
+        let mut server = tokio::spawn(controller.clone().serve_management(
             NodeId("management-client".into()),
             management_address.clone(),
             Arc::from(secret.clone().into_bytes()),
@@ -1727,7 +1727,36 @@ mod tests {
                 .get(&mutsuki_distributed_contracts::DistributedFeature::Clustered),
             Some(&mutsuki_distributed_contracts::CapabilityMaturity::Deployable)
         );
+        server.abort();
+        assert!(
+            server
+                .await
+                .expect_err("aborted management server")
+                .is_cancelled()
+        );
+        assert!(capability_client.health().await.is_err());
+        server = tokio::spawn(controller.clone().serve_management(
+            NodeId("management-client".into()),
+            management_address.clone(),
+            Arc::from(secret.clone().into_bytes()),
+            Duration::from_millis(20),
+            Duration::from_secs(2),
+        ));
+        let recovery_deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match capability_client.capabilities().await {
+                Ok(recovered) => {
+                    assert_eq!(recovered, proof);
+                    break;
+                }
+                Err(_) if Instant::now() < recovery_deadline => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Err(error) => panic!("recover capability session: {error:?}"),
+            }
+        }
         drop(capability_client);
+        let deadline = Instant::now() + Duration::from_secs(5);
         let client = loop {
             let candidate = ControllerClient::new(
                 NodeId("management-client".into()),

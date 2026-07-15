@@ -10,7 +10,8 @@ InProcessTest、Deployable、ProductionReady 和 Unavailable。`ReplicatedContro
 ## Clustered MVP
 
 认证 management control 面同时公开版本化 `SidecarCapabilityProof`。独立控制客户端互操作测试
-验证 proof 的 source revision 和 Clustered deployable maturity；Durable/Critical/HA/checkpoint/
+验证 proof 的 source revision、Clustered deployable maturity，以及 management server 断开后同一
+客户端清除旧 session 并重新认证恢复；Durable/Critical/HA/checkpoint/
 trust 仍按 Capability Matrix 返回各自真实成熟度，不能因握手存在而提升能力声明。
 
 `process::tests::independent_process_worker_submits_queries_cancels_pulses_and_drains` 启动三个独立
