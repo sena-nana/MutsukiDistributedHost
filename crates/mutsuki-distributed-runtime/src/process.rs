@@ -1890,7 +1890,12 @@ mod tests {
             )
             .await
             .expect("submit to child Worker");
-        assert_eq!(placement.node_id, NodeId("worker-process".into()));
+        assert_eq!(
+            placement.node_id,
+            NodeId("worker-process".into()),
+            "remote failure: {:?}",
+            controller.coordinator.last_remote_failure()
+        );
         assert_eq!(
             placement.kind,
             mutsuki_distributed_contracts::PlacementKind::Remote
