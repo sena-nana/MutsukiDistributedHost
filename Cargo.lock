@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "bitflags"
-version = "2.13.0"
+version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
+checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
 name = "block-buffer"
@@ -416,7 +416,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-runtime-contracts"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiCore.git?rev=63ac3c9479089d5dc0e8b4245838068694f043ad#63ac3c9479089d5dc0e8b4245838068694f043ad"
+source = "git+https://github.com/sena-nana/MutsukiCore.git?rev=d605333516753a797ca7e9971d097ac3e0de0c59#d605333516753a797ca7e9971d097ac3e0de0c59"
 dependencies = [
  "serde",
  "serde_json",
@@ -425,7 +425,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-service-config"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=f6e142f509555b47ebd4b934f5623e28bb402c5e#f6e142f509555b47ebd4b934f5623e28bb402c5e"
+source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=a48a5248289e91d517c5b3e84e56221a3f71a690#a48a5248289e91d517c5b3e84e56221a3f71a690"
 dependencies = [
  "dirs",
  "serde",
@@ -437,7 +437,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-service-control"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=f6e142f509555b47ebd4b934f5623e28bb402c5e#f6e142f509555b47ebd4b934f5623e28bb402c5e"
+source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=a48a5248289e91d517c5b3e84e56221a3f71a690#a48a5248289e91d517c5b3e84e56221a3f71a690"
 dependencies = [
  "futures",
  "mutsuki-runtime-contracts",
@@ -449,7 +449,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-service-ipc"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=f6e142f509555b47ebd4b934f5623e28bb402c5e#f6e142f509555b47ebd4b934f5623e28bb402c5e"
+source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=a48a5248289e91d517c5b3e84e56221a3f71a690#a48a5248289e91d517c5b3e84e56221a3f71a690"
 dependencies = [
  "mutsuki-service-config",
  "mutsuki-service-control",
@@ -628,9 +628,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
-version = "2.0.118"
+version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b9ae57f904213ebb649ce6895b8a66c66f0203b9319718f69a5612a065b1422"
+checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
 dependencies = [
  "proc-macro2",
  "quote",
