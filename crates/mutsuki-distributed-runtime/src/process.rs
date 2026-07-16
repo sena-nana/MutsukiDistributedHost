@@ -741,7 +741,7 @@ pub struct ControllerProcess {
     coordinator: Arc<Coordinator>,
     registry: Arc<std::sync::Mutex<WorkerRegistry>>,
     workers: BTreeMap<NodeId, Arc<LinkWorkerTransport>>,
-    pulse_gate: AsyncMutex<()>,
+    worker_gate: AsyncMutex<()>,
     stopping: AtomicBool,
 }
 
@@ -794,7 +794,7 @@ impl ControllerProcess {
             coordinator,
             registry,
             workers: transports,
-            pulse_gate: AsyncMutex::new(()),
+            worker_gate: AsyncMutex::new(()),
             stopping: AtomicBool::new(false),
         })
     }
@@ -804,9 +804,9 @@ impl ControllerProcess {
     }
 
     pub async fn pulse_once(&self) -> Vec<(NodeId, DistributedError)> {
-        // Keep the transport result and its registry update in the same order.
-        // Otherwise an older failed pulse can overwrite a newer successful one.
-        let _pulse = self.pulse_gate.lock().await;
+        // Keep pulse transport, registry updates, and placement decisions ordered.
+        // Otherwise scheduling can consume a stale or still-in-flight health snapshot.
+        let _worker = self.worker_gate.lock().await;
         let mut failures = Vec::new();
         for (node_id, worker) in &self.workers {
             match worker.pulse().await {
@@ -948,6 +948,7 @@ impl ControllerProcess {
                         requirements,
                         direct_inputs,
                     } = *submit;
+                    let _worker = self.worker_gate.lock().await;
                     (
                         self.coordinator
                             .submit(global_task_id, portable, requirements, direct_inputs)
