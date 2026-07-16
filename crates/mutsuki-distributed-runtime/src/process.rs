@@ -106,12 +106,21 @@ impl FileContentServer {
     }
 
     pub async fn serve_once(self) -> Result<(), DistributedError> {
+        let (server, listener) = self.bind()?;
+        server.serve_bound(listener).await
+    }
+
+    fn bind(self) -> Result<(Self, LocalListener), DistributedError> {
         let listener = LocalListener::bind(
-            &LocalAddress(self.address),
+            &LocalAddress(self.address.clone()),
             endpoint_id(&self.local_node),
             data_transport_budget(),
         )
         .map_err(map_transport)?;
+        Ok((self, listener))
+    }
+
+    async fn serve_bound(self, listener: LocalListener) -> Result<(), DistributedError> {
         let mut connection = listener
             .accept(endpoint_id(&self.worker_node))
             .await
@@ -1698,25 +1707,30 @@ mod tests {
             std::env::var("MUTSUKI_TEST_CONTENT_SOURCE").expect("content source path"),
         );
         let digest = std::env::var("MUTSUKI_TEST_CONTENT_DIGEST").expect("content digest");
+        let ready_path =
+            PathBuf::from(std::env::var("MUTSUKI_TEST_CONTENT_READY").expect("ready path"));
         let size = fs::metadata(&path).expect("content metadata").len();
         let runtime = tokio::runtime::Runtime::new().expect("content runtime");
-        runtime
-            .block_on(
-                FileContentServer::new(
-                    NodeId("content-origin".into()),
-                    NodeId("worker-process".into()),
-                    address,
-                    Arc::from(secret.into_bytes()),
-                    vec![FileContentSource {
-                        content_id: ContentId::new("sha256", digest, size, "blob"),
-                        path,
-                    }],
-                    Duration::from_secs(2),
-                )
-                .expect("content server config")
-                .serve_once(),
+        runtime.block_on(async {
+            let server = FileContentServer::new(
+                NodeId("content-origin".into()),
+                NodeId("worker-process".into()),
+                address,
+                Arc::from(secret.into_bytes()),
+                vec![FileContentSource {
+                    content_id: ContentId::new("sha256", digest, size, "blob"),
+                    path,
+                }],
+                Duration::from_secs(2),
             )
-            .expect("content server run");
+            .expect("content server config");
+            let (server, listener) = server.bind().expect("bind content server");
+            fs::write(ready_path, b"ready").expect("publish content readiness");
+            server
+                .serve_bound(listener)
+                .await
+                .expect("content server run");
+        });
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1728,6 +1742,7 @@ mod tests {
         let temporary = tempfile::tempdir().expect("content tempdir");
         let source_path = temporary.path().join("source.bin");
         let destination = temporary.path().join("worker-content");
+        let content_ready = temporary.path().join("content.ready");
         let content_bytes = vec![0x5a; 2 * 1024 * 1024 + 17];
         fs::write(&source_path, &content_bytes).expect("write content source");
         let content_digest = format!("{:x}", Sha256::digest(&content_bytes));
@@ -1763,11 +1778,20 @@ mod tests {
             .env("MUTSUKI_TEST_CLUSTER_SECRET", &secret)
             .env("MUTSUKI_TEST_CONTENT_SOURCE", &source_path)
             .env("MUTSUKI_TEST_CONTENT_DIGEST", &content_digest)
+            .env("MUTSUKI_TEST_CONTENT_READY", &content_ready)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
             .spawn()
             .expect("spawn independent content origin process");
+        let content_ready_deadline = Instant::now() + Duration::from_secs(5);
+        while !content_ready.is_file() {
+            assert!(
+                Instant::now() < content_ready_deadline,
+                "content origin did not publish readiness"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         let deadline = Instant::now() + Duration::from_secs(5);
         let controller = Arc::new(loop {
@@ -1890,12 +1914,7 @@ mod tests {
             )
             .await
             .expect("submit to child Worker");
-        assert_eq!(
-            placement.node_id,
-            NodeId("worker-process".into()),
-            "remote failure: {:?}",
-            controller.coordinator.last_remote_failure()
-        );
+        assert_eq!(placement.node_id, NodeId("worker-process".into()));
         assert_eq!(
             placement.kind,
             mutsuki_distributed_contracts::PlacementKind::Remote

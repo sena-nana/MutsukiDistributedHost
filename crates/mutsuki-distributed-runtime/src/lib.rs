@@ -506,8 +506,6 @@ pub struct Coordinator {
     records: Mutex<BTreeMap<GlobalTaskId, GlobalTaskRecord>>,
     max_tasks: usize,
     max_fallback_workers: usize,
-    #[cfg(test)]
-    last_remote_failure: Mutex<Option<DistributedError>>,
 }
 
 impl Coordinator {
@@ -535,8 +533,6 @@ impl Coordinator {
             records: Mutex::new(BTreeMap::new()),
             max_tasks,
             max_fallback_workers,
-            #[cfg(test)]
-            last_remote_failure: Mutex::new(None),
         })
     }
 
@@ -649,7 +645,6 @@ impl Coordinator {
         direct_inputs: &[DirectDataRef],
         excluded: &BTreeSet<NodeId>,
     ) -> Result<Option<RemoteAccepted>, DistributedError> {
-        self.reset_last_remote_failure();
         let candidates = self
             .registry
             .lock()
@@ -678,47 +673,12 @@ impl Coordinator {
                         DistributedErrorKind::WorkerRejected
                             | DistributedErrorKind::WorkerUnavailable
                             | DistributedErrorKind::TransportClosed
-                    ) =>
-                {
-                    self.record_remote_failure(error);
-                }
+                    ) => {}
                 Err(error) => return Err(error),
             }
         }
         Ok(None)
     }
-
-    #[cfg(test)]
-    fn last_remote_failure(&self) -> Option<DistributedError> {
-        self.last_remote_failure
-            .lock()
-            .expect("remote failure mutex")
-            .clone()
-    }
-
-    #[cfg(test)]
-    fn reset_last_remote_failure(&self) {
-        *self
-            .last_remote_failure
-            .lock()
-            .expect("remote failure mutex") = None;
-    }
-
-    #[cfg(not(test))]
-    #[allow(clippy::unused_self)]
-    fn reset_last_remote_failure(&self) {}
-
-    #[cfg(test)]
-    fn record_remote_failure(&self, error: DistributedError) {
-        *self
-            .last_remote_failure
-            .lock()
-            .expect("remote failure mutex") = Some(error);
-    }
-
-    #[cfg(not(test))]
-    #[allow(clippy::unused_self)]
-    fn record_remote_failure(&self, _error: DistributedError) {}
 
     pub async fn cancel(&self, global_task_id: &GlobalTaskId) -> Result<(), DistributedError> {
         let active = self.active_attempt(global_task_id)?;
