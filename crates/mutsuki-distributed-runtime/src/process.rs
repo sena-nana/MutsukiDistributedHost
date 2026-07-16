@@ -63,6 +63,11 @@ struct ContentManifest {
     chunk_bytes: usize,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ContentTransferAck {
+    content_id: mutsuki_runtime_contracts::ContentId,
+}
+
 pub struct FileContentServer {
     local_node: NodeId,
     worker_node: NodeId,
@@ -182,7 +187,14 @@ impl FileContentServer {
             }
             send_message(&mut connection, &chunk[..read], false, self.timeout).await?;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        let ack: ContentTransferAck =
+            serde_json::from_slice(&receive_message(&mut connection, self.timeout).await?)
+                .map_err(|_| protocol_error("content transfer acknowledgement is invalid"))?;
+        if ack.content_id != source.content_id {
+            return Err(protocol_error(
+                "content transfer acknowledgement does not match the source",
+            ));
+        }
         Ok(())
     }
 }
@@ -329,6 +341,25 @@ impl LinkResourceLocalizer {
         }
         drop(output);
         fs::rename(&temporary, &final_path).map_err(|_| content_io_error())?;
+        send_message(
+            &mut connection,
+            &serde_json::to_vec(&ContentTransferAck {
+                content_id: resource.content_id.clone(),
+            })
+            .map_err(|_| protocol_error("content transfer acknowledgement encode failed"))?,
+            true,
+            self.timeout,
+        )
+        .await?;
+        match receive_message(&mut connection, self.timeout).await {
+            Err(error) if error.kind == DistributedErrorKind::TransportClosed => {}
+            Ok(_) => {
+                return Err(protocol_error(
+                    "content endpoint sent data after transfer completion",
+                ));
+            }
+            Err(error) => return Err(error),
+        }
         Ok(())
     }
 
