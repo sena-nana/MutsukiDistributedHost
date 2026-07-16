@@ -356,6 +356,41 @@ struct AuthWelcome {
     proof: [u8; 32],
 }
 
+// A cancelled request may have written its frame without consuming the reply.
+// Only a complete request/reply exchange leaves the connection reusable.
+struct InFlightConnection<'a> {
+    state: &'a mut Option<LocalConnection>,
+    reusable: bool,
+}
+
+impl<'a> InFlightConnection<'a> {
+    fn new(state: &'a mut Option<LocalConnection>) -> Self {
+        Self {
+            state,
+            reusable: false,
+        }
+    }
+
+    fn connection(&mut self) -> &mut LocalConnection {
+        self.state.as_mut().expect("connection initialized")
+    }
+
+    fn keep(mut self) {
+        self.reusable = true;
+    }
+}
+
+impl Drop for InFlightConnection<'_> {
+    fn drop(&mut self) {
+        if !self.reusable {
+            if let Some(connection) = self.state.as_mut() {
+                connection.abort();
+            }
+            *self.state = None;
+        }
+    }
+}
+
 pub struct LinkWorkerTransport {
     local_node: NodeId,
     remote_node: NodeId,
@@ -424,8 +459,9 @@ impl LinkWorkerTransport {
         if state.is_none() {
             *state = Some(self.connect().await?);
         }
+        let mut in_flight = InFlightConnection::new(&mut state);
         let result = async {
-            let connection = state.as_mut().expect("connection initialized");
+            let connection = in_flight.connection();
             send_message(connection, &payload, true, self.timeout).await?;
             let bytes = receive_message(connection, self.timeout).await?;
             let reply: ClusterReply = decode_control(&bytes)?;
@@ -437,13 +473,13 @@ impl LinkWorkerTransport {
             })
         }
         .await;
-        if result.is_err() {
-            if let Some(connection) = state.as_mut() {
-                connection.abort();
+        match result {
+            Ok(reply) => {
+                in_flight.keep();
+                Ok(reply)
             }
-            *state = None;
+            Err(error) => Err(error),
         }
-        result
     }
 
     pub async fn describe(&self) -> Result<WorkerAdvertisement, DistributedError> {
