@@ -785,7 +785,8 @@ impl ControllerProcess {
         )
         .map_err(map_transport)?;
         let pulse_controller = self.clone();
-        let pulse_task = tokio::spawn(async move {
+        let mut background_tasks = tokio::task::JoinSet::new();
+        background_tasks.spawn(async move {
             while !pulse_controller.stopping.load(Ordering::Acquire) {
                 pulse_controller.pulse_once().await;
                 tokio::time::sleep(pulse_interval).await;
@@ -812,7 +813,7 @@ impl ControllerProcess {
             self.serve_management_connection(&mut connection, timeout)
                 .await?;
         }
-        pulse_task.abort();
+        background_tasks.shutdown().await;
         let failures = self.shutdown().await;
         if failures.is_empty() {
             Ok(())
