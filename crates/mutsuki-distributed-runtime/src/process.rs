@@ -391,6 +391,50 @@ impl Drop for InFlightConnection<'_> {
     }
 }
 
+#[derive(Default)]
+struct TaskStop {
+    requested: AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl TaskStop {
+    fn request(&self) {
+        self.requested.store(true, Ordering::Release);
+        self.notify.notify_one();
+    }
+
+    fn is_requested(&self) -> bool {
+        self.requested.load(Ordering::Acquire)
+    }
+}
+
+struct ScopedBackgroundTask {
+    stop: Arc<TaskStop>,
+    handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl ScopedBackgroundTask {
+    fn new(stop: Arc<TaskStop>, handle: tokio::task::JoinHandle<()>) -> Self {
+        Self {
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    async fn shutdown(mut self) {
+        self.stop.request();
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.await;
+        }
+    }
+}
+
+impl Drop for ScopedBackgroundTask {
+    fn drop(&mut self) {
+        self.stop.request();
+    }
+}
+
 pub struct LinkWorkerTransport {
     local_node: NodeId,
     remote_node: NodeId,
@@ -821,13 +865,25 @@ impl ControllerProcess {
         )
         .map_err(map_transport)?;
         let pulse_controller = self.clone();
-        let mut background_tasks = tokio::task::JoinSet::new();
-        background_tasks.spawn(async move {
-            while !pulse_controller.stopping.load(Ordering::Acquire) {
-                pulse_controller.pulse_once().await;
-                tokio::time::sleep(pulse_interval).await;
-            }
-        });
+        let pulse_stop = Arc::new(TaskStop::default());
+        let task_stop = pulse_stop.clone();
+        let pulse_task = ScopedBackgroundTask::new(
+            pulse_stop,
+            tokio::spawn(async move {
+                while !pulse_controller.stopping.load(Ordering::Acquire)
+                    && !task_stop.is_requested()
+                {
+                    pulse_controller.pulse_once().await;
+                    if task_stop.is_requested() {
+                        break;
+                    }
+                    tokio::select! {
+                        () = tokio::time::sleep(pulse_interval) => {}
+                        () = task_stop.notify.notified() => {}
+                    }
+                }
+            }),
+        );
         while !self.stopping.load(Ordering::Acquire) {
             let mut connection = listener
                 .accept(endpoint_id(&client_node))
@@ -849,7 +905,7 @@ impl ControllerProcess {
             self.serve_management_connection(&mut connection, timeout)
                 .await?;
         }
-        background_tasks.shutdown().await;
+        pulse_task.shutdown().await;
         let failures = self.shutdown().await;
         if failures.is_empty() {
             Ok(())
