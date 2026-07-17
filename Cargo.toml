@@ -5,6 +5,7 @@ members = [
     "crates/mutsuki-distributed-host-adapter",
     "crates/mutsuki-distributed-runtime",
     "crates/mutsuki-distributed-host",
+    "crates/mutsuki-distributed-benchmarks",
 ]
 resolver = "2"
 

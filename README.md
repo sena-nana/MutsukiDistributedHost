@@ -123,3 +123,11 @@ checkpoint、trust 的逐项 maturity。产品必须同时校验 release/revisio
 
 安全边界与失败语义见 [docs/phase8-trust-plane.md](docs/phase8-trust-plane.md)，Issue #12 验收证据见
 [docs/acceptance/issue-12.md](docs/acceptance/issue-12.md)。
+
+## Performance model
+
+Issue #22 的多进程派发、placement、持久 registry、1 MiB/64 MiB/1 GiB content localization
+与故障恢复基准由本仓库的 `mutsuki-distributed-benchmarks` 和
+`scripts/run-performance-model.py` 独立拥有。报告、raw samples 和 anomaly analysis 保存在
+本仓库 `artifacts/performance/`；固定机器工作流位于 `.github/workflows/performance.yml`。
+边界、矩阵和异常判定见 [docs/performance-model-issue22.md](docs/performance-model-issue22.md)。

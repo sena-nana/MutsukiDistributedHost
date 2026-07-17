@@ -1,0 +1,22 @@
+[package]
+name = "mutsuki-distributed-benchmarks"
+description = "Multi-process fixtures for the Mutsuki DistributedHost performance model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+mutsuki-distributed-contracts.workspace = true
+mutsuki-distributed-runtime.workspace = true
+mutsuki-runtime-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

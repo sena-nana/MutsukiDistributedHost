@@ -1,3 +1,7 @@
 /target/
+**/target/
+__pycache__/
+*.py[cod]
 /config/local.toml
 *.secret
+/artifacts/performance/issue22-macos-arm64-provisional/

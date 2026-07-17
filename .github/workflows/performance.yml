@@ -1,0 +1,56 @@
+name: Performance reference
+
+on:
+  schedule:
+    - cron: "49 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixed-reference:
+    name: Fixed reference (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            labels: [self-hosted, mutsuki-reference, macOS, ARM64]
+            service_binary: _deps/MutsukiServiceHost/target/release/mutsuki-benchmark-service
+          - name: windows-x64
+            labels: [self-hosted, mutsuki-reference, Windows, X64]
+            service_binary: _deps/MutsukiServiceHost/target/release/mutsuki-benchmark-service.exe
+    runs-on: ${{ matrix.labels }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: sena-nana/MutsukiServiceHost
+          path: _deps/MutsukiServiceHost
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build the real ServiceHost fixture
+        working-directory: _deps/MutsukiServiceHost
+        run: >-
+          cargo build --release --locked
+          --package mutsuki-service-benchmarks
+          --bin mutsuki-benchmark-service
+      - name: Run owner reference
+        shell: bash
+        run: >-
+          python scripts/run-performance-model.py
+          --mode reference
+          --service-binary ${{ matrix.service_binary }}
+          --repository MutsukiDistributedHost=.
+          --repository MutsukiServiceHost=_deps/MutsukiServiceHost
+          --output artifacts/performance/reference-${{ matrix.name }}/report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributed-host-reference-${{ matrix.name }}-${{ github.run_id }}
+          path: artifacts/performance/reference-${{ matrix.name }}/
+          retention-days: 90
+          if-no-files-found: error
