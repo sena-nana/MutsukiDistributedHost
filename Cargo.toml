@@ -28,8 +28,8 @@ tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "signal", "
 mutsuki-runtime-contracts = { git = "https://github.com/sena-nana/MutsukiCore.git", rev = "94ba3a81d6bf4fb1263007766a64ac8be3fec1ab" }
 mutsuki-link-core = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9" }
 mutsuki-link = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9", features = ["local"] }
-mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "eb7396396861513e25b49015559259f7ed998bf7" }
-mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "eb7396396861513e25b49015559259f7ed998bf7" }
+mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4" }
+mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4" }
 
 mutsuki-distributed-contracts = { path = "crates/mutsuki-distributed-contracts" }
 mutsuki-distributed-control-client = { path = "crates/mutsuki-distributed-control-client" }
