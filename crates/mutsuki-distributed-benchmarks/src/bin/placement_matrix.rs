@@ -118,9 +118,10 @@ fn main() {
         cases,
         correctness,
     };
-    let output = env::var_os("MUTSUKI_BENCH_OUTPUT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("target/mutsuki-benchmarks/placement-matrix.raw.json"));
+    let output = env::var_os("MUTSUKI_BENCH_OUTPUT").map_or_else(
+        || PathBuf::from("target/mutsuki-benchmarks/placement-matrix.raw.json"),
+        PathBuf::from,
+    );
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).expect("create placement benchmark output directory");
     }
@@ -250,6 +251,7 @@ fn snapshot(
 }
 
 fn execution_variant(workload: Workload, index: usize) -> ExecutionVariant {
+    let execution_offset = u32::try_from(index).expect("variant index must fit in u32");
     ExecutionVariant {
         variant_id: format!("{}-{index:02}", workload.name),
         required_capabilities: workload.required,
@@ -270,7 +272,7 @@ fn execution_variant(workload: Workload, index: usize) -> ExecutionVariant {
             rtt: 1.0,
             input_transfer: 2.0,
             prewarm: 1.0,
-            execution: 10.0 + index as f64,
+            execution: 10.0 + f64::from(execution_offset),
             output_transfer: 1.0,
             commit: 1.0,
             jitter: 1.0,

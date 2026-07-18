@@ -54,6 +54,7 @@ enum TransferKind {
 }
 
 #[tokio::main(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     let content_bytes = env_u64("MUTSUKI_CONTENT_BYTES", 1024 * 1024);
     let concurrency = env_usize("MUTSUKI_CONTENT_CONCURRENCY", 1);
@@ -197,11 +198,10 @@ async fn main() {
             unexpected_origin_contacts_on_hit: 0,
         },
     };
-    let output = env::var_os("MUTSUKI_BENCH_OUTPUT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from("target/mutsuki-benchmarks/content-localization.raw.json")
-        });
+    let output = env::var_os("MUTSUKI_BENCH_OUTPUT").map_or_else(
+        || PathBuf::from("target/mutsuki-benchmarks/content-localization.raw.json"),
+        PathBuf::from,
+    );
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).expect("create benchmark output directory");
     }

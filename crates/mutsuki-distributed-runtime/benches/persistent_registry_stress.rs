@@ -34,6 +34,7 @@ fn spec(id: usize, input: &ContentId, acceptance: AcceptanceMode) -> DurableTask
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     let mutations = env::var("MUTSUKI_REGISTRY_STRESS_MUTATIONS")
         .ok()

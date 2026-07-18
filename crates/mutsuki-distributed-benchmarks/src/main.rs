@@ -80,7 +80,7 @@ impl ManagedChild {
                     return Err(format!("{} exited with {status}", self.role));
                 }
                 Ok(None) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(5))
+                    std::thread::sleep(Duration::from_millis(5));
                 }
                 Ok(None) => return Err(format!("{} did not stop before deadline", self.role)),
                 Err(error) => return Err(format!("wait {}: {error}", self.role)),
@@ -706,11 +706,13 @@ fn parse_cpu_time(value: &str) -> Option<u64> {
         });
     let minutes = minutes.parse::<u64>().ok()?;
     let seconds = seconds.parse::<f64>().ok()?;
+    let seconds_nanos =
+        u64::try_from(Duration::try_from_secs_f64(seconds).ok()?.as_nanos()).ok()?;
     Some(
         hours
             .saturating_mul(3_600_000_000_000)
             .saturating_add(minutes.saturating_mul(60_000_000_000))
-            .saturating_add((seconds * 1_000_000_000.0) as u64),
+            .saturating_add(seconds_nanos),
     )
 }
 
