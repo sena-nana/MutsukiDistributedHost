@@ -42,6 +42,7 @@ struct Correctness {
     unsafe_automatic_retries: u64,
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     let samples = env::var("MUTSUKI_FAULT_SAMPLES")
         .ok()
@@ -220,9 +221,10 @@ fn main() {
         ],
         correctness,
     };
-    let output = env::var_os("MUTSUKI_BENCH_OUTPUT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("target/mutsuki-benchmarks/durability-faults.raw.json"));
+    let output = env::var_os("MUTSUKI_BENCH_OUTPUT").map_or_else(
+        || PathBuf::from("target/mutsuki-benchmarks/durability-faults.raw.json"),
+        PathBuf::from,
+    );
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).expect("create fault benchmark output directory");
     }

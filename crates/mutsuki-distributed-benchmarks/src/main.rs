@@ -80,7 +80,7 @@ impl ManagedChild {
                     return Err(format!("{} exited with {status}", self.role));
                 }
                 Ok(None) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(5))
+                    std::thread::sleep(Duration::from_millis(5));
                 }
                 Ok(None) => return Err(format!("{} did not stop before deadline", self.role)),
                 Err(error) => return Err(format!("wait {}: {error}", self.role)),
