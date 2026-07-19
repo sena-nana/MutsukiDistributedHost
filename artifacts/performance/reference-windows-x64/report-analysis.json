@@ -1,0 +1,345 @@
+{
+  "schema_version": "mutsuki.performance.analysis/v1",
+  "classification": "case-specific-noise",
+  "reason": "isolated latency cases have MAD above 10% of median",
+  "correctness_counters": {
+    "non_remote_placements": 0,
+    "unsafe_remote_placements": 0,
+    "stale_results_accepted": 0,
+    "duplicate_commits": 0,
+    "scheduling_errors": 0,
+    "incompatible_selections": 0,
+    "local_selections": 0,
+    "operation_budget_violations": 0,
+    "digest_mismatches": 0,
+    "incomplete_files": 0,
+    "unexpected_origin_contacts_on_hit": 0,
+    "lost_states_after_reopen": 0,
+    "stale_outputs_accepted": 0,
+    "duplicate_commits_accepted": 0,
+    "committed_output_changes": 0,
+    "unsafe_automatic_retries": 0
+  },
+  "noisy_cases": [
+    {
+      "case_id": "distributed.system.shutdown",
+      "dimensions": {
+        "workers": 16
+      },
+      "mad_ratio": 0.11694804255286745
+    },
+    {
+      "case_id": "distributed.system.worker-coverage",
+      "dimensions": {
+        "workers": 1,
+        "workload": "worker-coverage"
+      },
+      "mad_ratio": 0.10683420261915556
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-1.top-k-16",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 16
+      },
+      "mad_ratio": 0.14285714285714285
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-1.top-k-4",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 4
+      },
+      "mad_ratio": 0.125
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-1",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 1
+      },
+      "mad_ratio": 0.125
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-16",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 16
+      },
+      "mad_ratio": 0.14285714285714285
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-4",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 4
+      },
+      "mad_ratio": 0.125
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-1.top-k-1",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 1
+      },
+      "mad_ratio": 0.2727272727272727
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-1.top-k-8",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 8
+      },
+      "mad_ratio": 0.14285714285714285
+    },
+    {
+      "case_id": "distributed.registry.mutate",
+      "dimensions": {
+        "acceptance": "critical",
+        "mutations": 10000
+      },
+      "mad_ratio": 0.11070355684059613
+    },
+    {
+      "case_id": "distributed.registry.mutate",
+      "dimensions": {
+        "acceptance": "durable",
+        "mutations": 10000
+      },
+      "mad_ratio": 0.10700506836108231
+    },
+    {
+      "case_id": "distributed.registry.mutate",
+      "dimensions": {
+        "acceptance": "fast",
+        "mutations": 10000
+      },
+      "mad_ratio": 0.18920991423103983
+    },
+    {
+      "case_id": "distributed.registry.mutate",
+      "dimensions": {
+        "acceptance": "fast",
+        "mutations": 1000000
+      },
+      "mad_ratio": 0.13035012499154802
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 1048576,
+        "concurrency": 1,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.14793962625778628
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 1048576,
+        "concurrency": 4,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.19302758804222478
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 1048576,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.24263944893959288
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 1048576,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.17012313054135308
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 1,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.36661385623800946
+    },
+    {
+      "case_id": "content.localization.resume_half",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 1,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.24418439352469554
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 4,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.6024437256607119
+    },
+    {
+      "case_id": "content.localization.resume_half",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 4,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.3290445058671792
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.6084600210643663
+    },
+    {
+      "case_id": "content.localization.resume_half",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.45958163300664745
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 67108864,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.16665739996437817
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 1,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.5394294253071008
+    },
+    {
+      "case_id": "content.localization.resume_half",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 1,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.2193644550831304
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 1,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.10706684878278279
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 4,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.6552559719585447
+    },
+    {
+      "case_id": "content.localization.resume_half",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 4,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.5162018974606276
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 4,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.15153153120877172
+    },
+    {
+      "case_id": "content.localization.miss",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.11516829590730539
+    },
+    {
+      "case_id": "content.localization.verified_hit",
+      "dimensions": {
+        "content_bytes": 1073741824,
+        "concurrency": 16,
+        "chunk_bytes": 262144
+      },
+      "mad_ratio": 0.40055850235715895
+    },
+    {
+      "case_id": "distributed.durability.committed",
+      "dimensions": {
+        "fault_stage": "committed"
+      },
+      "mad_ratio": 0.2661654135338346
+    },
+    {
+      "case_id": "distributed.durability.output-staged",
+      "dimensions": {
+        "fault_stage": "output_staged"
+      },
+      "mad_ratio": 0.24215456674473068
+    },
+    {
+      "case_id": "distributed.durability.running",
+      "dimensions": {
+        "fault_stage": "running"
+      },
+      "mad_ratio": 0.26608505997818976
+    }
+  ],
+  "limitations": [
+    "No regression claim is made without an approved baseline from the same environment.",
+    "Loopback local IPC does not represent real network latency or throughput."
+  ]
+}
