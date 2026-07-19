@@ -430,7 +430,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-runtime-contracts"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiCore.git?rev=94ba3a81d6bf4fb1263007766a64ac8be3fec1ab#94ba3a81d6bf4fb1263007766a64ac8be3fec1ab"
+source = "git+https://github.com/sena-nana/MutsukiCore.git?rev=82c506d4301ae22d9826e7e33df202098fb568b9#82c506d4301ae22d9826e7e33df202098fb568b9"
 dependencies = [
  "serde",
  "serde_json",
@@ -439,7 +439,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-service-config"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4#764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4"
+source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=f712027f69a22dfa165470c032e38525ac90f0fe#f712027f69a22dfa165470c032e38525ac90f0fe"
 dependencies = [
  "dirs",
  "serde",
@@ -451,7 +451,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-service-control"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4#764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4"
+source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=f712027f69a22dfa165470c032e38525ac90f0fe#f712027f69a22dfa165470c032e38525ac90f0fe"
 dependencies = [
  "futures",
  "mutsuki-runtime-contracts",
@@ -463,7 +463,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-service-ipc"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4#764b03ec41c9e6c02dfdfd00dd222ec5d77e13b4"
+source = "git+https://github.com/sena-nana/MutsukiServiceHost.git?rev=f712027f69a22dfa165470c032e38525ac90f0fe#f712027f69a22dfa165470c032e38525ac90f0fe"
 dependencies = [
  "mutsuki-service-config",
  "mutsuki-service-control",
