@@ -1361,12 +1361,15 @@ fn authenticated_binding(
         scheme: "local".into(),
         address: remote.0.clone(),
     };
+    let distributed_protocol = crate::distributed_protocol_descriptor();
     let session = SessionInfo {
         session_id: SessionId::from_bytes(transcript[..16].try_into().expect("SHA prefix")),
         peer_id: remote_peer,
         protocols: vec![ProtocolSelection {
-            namespace: mutsuki_distributed_contracts::DISTRIBUTED_PROTOCOL_ID.into(),
+            stable_id: distributed_protocol.stable_id,
             version: ProtocolVersion::new(1, 0),
+            schema: distributed_protocol.schema,
+            capabilities: distributed_protocol.capabilities,
         }],
         continuity: SessionContinuity::default(),
         quality: ConnectionQuality::default(),

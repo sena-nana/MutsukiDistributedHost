@@ -21,7 +21,8 @@ use mutsuki_distributed_contracts::{
 use mutsuki_distributed_host_adapter::{HostAdapter, HostFuture};
 use mutsuki_link_core::{
     AuthenticatedSession, ChannelMode, ConnectionQuality, PeerId, ProtocolChannel,
-    ProtocolDescriptor, ProtocolId, ProtocolVersion, SecurityLevel, VersionRange,
+    ProtocolChannelId, ProtocolDescriptor, ProtocolOffer, ProtocolVersion, SecurityLevel,
+    VersionRange,
 };
 use mutsuki_runtime_contracts::{
     ExecutionMobility, PortableTask, RequirementSet, RuntimeEvent, TaskBatch, TaskHandle,
@@ -54,12 +55,25 @@ pub use trust_plane::*;
 pub use trust_reputation::*;
 
 pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
+    let versions = VersionRange::new(ProtocolVersion::new(1, 0), ProtocolVersion::new(1, 0));
+    let offer = ProtocolOffer::from_debug_namespace(DISTRIBUTED_PROTOCOL_ID, versions);
     ProtocolDescriptor {
-        id: ProtocolId::new(DISTRIBUTED_PROTOCOL_ID).expect("static distributed protocol id"),
-        versions: VersionRange::new(ProtocolVersion::new(1, 0), ProtocolVersion::new(1, 0)),
+        stable_id: offer.stable_id,
+        debug_identity: offer.debug_identity,
+        versions,
+        schema: offer.schema,
+        capabilities: offer.capabilities,
         channels: vec![
-            protocol_channel("control", ChannelMode::RequestResponse, 0, 64 * 1024, None),
             protocol_channel(
+                1,
+                "control",
+                ChannelMode::RequestResponse,
+                0,
+                64 * 1024,
+                None,
+            ),
+            protocol_channel(
+                2,
                 "resource",
                 ChannelMode::Stream,
                 80,
@@ -67,6 +81,7 @@ pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
                 Some(64 * 1024 * 1024 * 1024),
             ),
             protocol_channel(
+                3,
                 "result",
                 ChannelMode::Stream,
                 40,
@@ -78,14 +93,16 @@ pub fn distributed_protocol_descriptor() -> ProtocolDescriptor {
 }
 
 fn protocol_channel(
-    name: &str,
+    id: u16,
+    debug_name: &str,
     mode: ChannelMode,
     priority: u8,
     max_frame_bytes: usize,
     max_stream_bytes: Option<u64>,
 ) -> ProtocolChannel {
     ProtocolChannel {
-        name: name.to_owned(),
+        id: ProtocolChannelId(id),
+        debug_name: Some(debug_name.to_owned()),
         mode,
         priority,
         max_frame_bytes,
@@ -108,7 +125,7 @@ impl LinkSessionBinding {
             .info()
             .protocols
             .iter()
-            .any(|protocol| protocol.namespace == DISTRIBUTED_PROTOCOL_ID)
+            .any(|protocol| protocol.stable_id == distributed_protocol_descriptor().stable_id)
         {
             return Err(DistributedError::new(
                 DistributedErrorKind::Incompatible,

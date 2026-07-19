@@ -547,9 +547,19 @@ async fn disabled_sidecar_is_inert_and_does_not_own_local_host_lifecycle() {
 #[test]
 fn distributed_protocol_separates_control_from_large_data_streams() {
     let descriptor = distributed_protocol_descriptor();
-    assert_eq!(descriptor.id.as_str(), DISTRIBUTED_PROTOCOL_ID);
+    let debug_identity = descriptor
+        .debug_identity
+        .as_ref()
+        .expect("distributed protocol debug identity");
+    assert_eq!(debug_identity.authority, "mutsuki.distributed");
+    assert_eq!(debug_identity.name, "cluster");
+    assert_eq!(debug_identity.stable_id(), descriptor.stable_id);
     assert_eq!(descriptor.channels.len(), 3);
-    assert_eq!(descriptor.channels[0].name, "control");
+    assert_eq!(descriptor.channels[0].id.0, 1);
+    assert_eq!(
+        descriptor.channels[0].debug_name.as_deref(),
+        Some("control")
+    );
     assert_eq!(descriptor.channels[0].mode, ChannelMode::RequestResponse);
     assert_eq!(descriptor.channels[1].mode, ChannelMode::Stream);
     assert_eq!(descriptor.channels[2].mode, ChannelMode::Stream);

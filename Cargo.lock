@@ -395,7 +395,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-link"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=9d671b169b9db206ebb6d8c33ab01a544f6a22b9#9d671b169b9db206ebb6d8c33ab01a544f6a22b9"
+source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=71d40fd0d1e32fb0ba47bfd04ac94e1da8983679#71d40fd0d1e32fb0ba47bfd04ac94e1da8983679"
 dependencies = [
  "mutsuki-link-core",
  "mutsuki-link-local",
@@ -405,12 +405,15 @@ dependencies = [
 [[package]]
 name = "mutsuki-link-core"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=9d671b169b9db206ebb6d8c33ab01a544f6a22b9#9d671b169b9db206ebb6d8c33ab01a544f6a22b9"
+source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=71d40fd0d1e32fb0ba47bfd04ac94e1da8983679#71d40fd0d1e32fb0ba47bfd04ac94e1da8983679"
+dependencies = [
+ "sha2",
+]
 
 [[package]]
 name = "mutsuki-link-io"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=9d671b169b9db206ebb6d8c33ab01a544f6a22b9#9d671b169b9db206ebb6d8c33ab01a544f6a22b9"
+source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=71d40fd0d1e32fb0ba47bfd04ac94e1da8983679#71d40fd0d1e32fb0ba47bfd04ac94e1da8983679"
 dependencies = [
  "mutsuki-link-core",
  "tokio",
@@ -419,7 +422,7 @@ dependencies = [
 [[package]]
 name = "mutsuki-link-local"
 version = "0.1.0"
-source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=9d671b169b9db206ebb6d8c33ab01a544f6a22b9#9d671b169b9db206ebb6d8c33ab01a544f6a22b9"
+source = "git+https://github.com/sena-nana/MutsukiLink.git?rev=71d40fd0d1e32fb0ba47bfd04ac94e1da8983679#71d40fd0d1e32fb0ba47bfd04ac94e1da8983679"
 dependencies = [
  "interprocess",
  "mutsuki-link-core",

@@ -26,8 +26,8 @@ thiserror = "2.0"
 tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 
 mutsuki-runtime-contracts = { git = "https://github.com/sena-nana/MutsukiCore.git", rev = "d4ec2e16db4a473c5fcf3f36a88e2ade09b3f695" }
-mutsuki-link-core = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9" }
-mutsuki-link = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "9d671b169b9db206ebb6d8c33ab01a544f6a22b9", features = ["local"] }
+mutsuki-link-core = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "71d40fd0d1e32fb0ba47bfd04ac94e1da8983679" }
+mutsuki-link = { git = "https://github.com/sena-nana/MutsukiLink.git", rev = "71d40fd0d1e32fb0ba47bfd04ac94e1da8983679", features = ["local"] }
 mutsuki-service-control = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "9fb03856c95027f849753c3b012e87a52f1598e7" }
 mutsuki-service-ipc = { git = "https://github.com/sena-nana/MutsukiServiceHost.git", rev = "9fb03856c95027f849753c3b012e87a52f1598e7" }
 
