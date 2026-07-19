@@ -5,3 +5,4 @@ __pycache__/
 /config/local.toml
 *.secret
 /artifacts/performance/issue22-macos-arm64-provisional/
+/artifacts/performance/reference-*/

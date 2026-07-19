@@ -176,16 +176,17 @@ def case(
 def run_raw(args: argparse.Namespace, raw: Path, process_run: int) -> list[Path]:
     generated: list[Path] = []
     system_path = raw / f"system-{process_run}.json"
-    command(
-        [
-            str(args.distributed_benchmark),
-            str(args.distributed_binary),
-            str(args.service_binary),
-            args.mode,
-            str(args.system_samples),
-            str(system_path),
-        ]
-    )
+    if not reusable_raw(args, system_path):
+        command(
+            [
+                str(args.distributed_benchmark),
+                str(args.distributed_binary),
+                str(args.service_binary),
+                args.mode,
+                str(args.system_samples),
+                str(system_path),
+            ]
+        )
     generated.append(system_path)
 
     placement_path = raw / f"placement-{process_run}.json"
@@ -201,46 +202,60 @@ def run_raw(args: argparse.Namespace, raw: Path, process_run: int) -> list[Path]
                 "MUTSUKI_PLACEMENT_TOP_K": "1,4",
             }
         )
-    command([str(args.placement_binary)], env=placement_env)
+    if not reusable_raw(args, placement_path):
+        command([str(args.placement_binary)], env=placement_env)
     generated.append(placement_path)
 
     for mutations, acceptances in args.registry_matrix:
         for acceptance in acceptances:
             output = raw / f"registry-{mutations}-{acceptance}-{process_run}.json"
-            command(
-                ["cargo", "bench", "--quiet", "-p", "mutsuki-distributed-runtime", "--bench", "persistent_registry_stress"],
-                env={
-                    "MUTSUKI_REGISTRY_STRESS_MUTATIONS": str(mutations),
-                    "MUTSUKI_REGISTRY_ACCEPTANCE": acceptance,
-                    "MUTSUKI_BENCH_OUTPUT": str(output),
-                },
-            )
+            if not reusable_raw(args, output):
+                command(
+                    ["cargo", "bench", "--quiet", "-p", "mutsuki-distributed-runtime", "--bench", "persistent_registry_stress"],
+                    env={
+                        "MUTSUKI_REGISTRY_STRESS_MUTATIONS": str(mutations),
+                        "MUTSUKI_REGISTRY_ACCEPTANCE": acceptance,
+                        "MUTSUKI_BENCH_OUTPUT": str(output),
+                    },
+                )
             generated.append(output)
 
     for size in args.content_sizes:
         for concurrency in args.content_concurrency:
             output = raw / f"content-{size}-{concurrency}-{process_run}.json"
-            command(
-                [str(args.content_binary)],
-                env={
-                    "MUTSUKI_CONTENT_BYTES": str(size),
-                    "MUTSUKI_CONTENT_CONCURRENCY": str(concurrency),
-                    "MUTSUKI_CONTENT_SAMPLES": str(args.content_samples),
-                    "MUTSUKI_BENCH_OUTPUT": str(output),
-                },
-            )
+            if not reusable_raw(args, output):
+                command(
+                    [str(args.content_binary)],
+                    env={
+                        "MUTSUKI_CONTENT_BYTES": str(size),
+                        "MUTSUKI_CONTENT_CONCURRENCY": str(concurrency),
+                        "MUTSUKI_CONTENT_SAMPLES": str(args.content_samples),
+                        "MUTSUKI_BENCH_OUTPUT": str(output),
+                    },
+                )
             generated.append(output)
 
     faults_path = raw / f"faults-{process_run}.json"
-    command(
-        [str(args.fault_binary)],
-        env={
-            "MUTSUKI_FAULT_SAMPLES": str(args.fault_samples),
-            "MUTSUKI_BENCH_OUTPUT": str(faults_path),
-        },
-    )
+    if not reusable_raw(args, faults_path):
+        command(
+            [str(args.fault_binary)],
+            env={
+                "MUTSUKI_FAULT_SAMPLES": str(args.fault_samples),
+                "MUTSUKI_BENCH_OUTPUT": str(faults_path),
+            },
+        )
     generated.append(faults_path)
     return generated
+
+
+def reusable_raw(args: argparse.Namespace, path: Path) -> bool:
+    if not args.resume or not path.is_file():
+        return False
+    try:
+        load(path)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return True
 
 
 def merge_system(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -471,6 +486,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--repository", action="append", default=[], metavar="NAME=PATH")
     result.add_argument("--process-runs", type=int)
     result.add_argument("--skip-build", action="store_true")
+    result.add_argument(
+        "--resume",
+        action="store_true",
+        help="reuse only complete, parseable raw case files and run every missing case",
+    )
     result.add_argument(
         "--reuse-raw",
         action="store_true",
