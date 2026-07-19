@@ -66,7 +66,13 @@ async fn main() {
     );
     assert!(samples > 0, "MUTSUKI_CONTENT_SAMPLES must be positive");
 
-    let temp = TempDir::new().expect("create content benchmark directory");
+    let output = env::var_os("MUTSUKI_BENCH_OUTPUT").map_or_else(
+        || PathBuf::from("target/mutsuki-benchmarks/content-localization.raw.json"),
+        PathBuf::from,
+    );
+    let output_directory = output.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(output_directory).expect("create benchmark output directory");
+    let temp = TempDir::new_in(output_directory).expect("create content benchmark directory");
     let source_path = temp.path().join("source.bin");
     let content_id = write_source(&source_path, content_bytes);
     let secret: Arc<[u8]> =
@@ -198,13 +204,6 @@ async fn main() {
             unexpected_origin_contacts_on_hit: 0,
         },
     };
-    let output = env::var_os("MUTSUKI_BENCH_OUTPUT").map_or_else(
-        || PathBuf::from("target/mutsuki-benchmarks/content-localization.raw.json"),
-        PathBuf::from,
-    );
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent).expect("create benchmark output directory");
-    }
     fs::write(
         &output,
         serde_json::to_vec_pretty(&report).expect("encode content benchmark report"),
