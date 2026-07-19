@@ -515,6 +515,12 @@ def main() -> None:
     args.placement_binary = ROOT / "target/release/placement_matrix"
     args.content_binary = ROOT / "target/release/content_localization"
     args.fault_binary = ROOT / "target/release/durability_faults"
+    if os.name == "nt":
+        args.distributed_binary = args.distributed_binary.with_suffix(".exe")
+        args.distributed_benchmark = args.distributed_benchmark.with_suffix(".exe")
+        args.placement_binary = args.placement_binary.with_suffix(".exe")
+        args.content_binary = args.content_binary.with_suffix(".exe")
+        args.fault_binary = args.fault_binary.with_suffix(".exe")
     args.system_samples = 2 if args.mode == "smoke" else 20
     args.placement_decisions = 10 if args.mode == "smoke" else 100
     args.registry_matrix = (
