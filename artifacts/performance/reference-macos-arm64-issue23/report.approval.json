@@ -1,0 +1,9 @@
+{
+  "approved_at": "2026-07-20T05:02:02.069020Z",
+  "approved_by": "sena-nana",
+  "environment_id": "229c9780568356363a956b53e3811e4a9bf5399a0e81270aaf593244ea87d6db",
+  "reason": "Issue #23 fixed-runner Apple M4 reference: fixed-total scaling and registry window jitter gates passed",
+  "report_sha256": "5ef6804a5267b1bee603aa90b8a70b1c08efc47d44ba37a4ca4f652415610456",
+  "revision_lock_hash": "386775d33a9a31dc296812685049d9c71fe031a65699d6036455eb0bcd489988",
+  "schema_version": "mutsuki.performance.baseline-approval/v1"
+}

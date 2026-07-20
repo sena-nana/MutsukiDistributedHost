@@ -1,0 +1,543 @@
+{
+  "schema_version": "mutsuki.performance.analysis/v1",
+  "classification": "case-specific-noise",
+  "reason": "isolated latency cases have MAD above 10% of median",
+  "correctness_counters": {
+    "non_remote_placements": 0,
+    "unsafe_remote_placements": 0,
+    "stale_results_accepted": 0,
+    "duplicate_commits": 0,
+    "scheduling_errors": 0,
+    "incompatible_selections": 0,
+    "local_selections": 0,
+    "operation_budget_violations": 0,
+    "digest_mismatches": 0,
+    "incomplete_files": 0,
+    "unexpected_origin_contacts_on_hit": 0,
+    "lost_states_after_reopen": 0,
+    "stale_outputs_accepted": 0,
+    "duplicate_commits_accepted": 0,
+    "committed_output_changes": 0,
+    "unsafe_automatic_retries": 0
+  },
+  "noisy_cases": [
+    {
+      "case_id": "distributed.system.calibrated-cpu-1ms",
+      "dimensions": {
+        "workers": 1,
+        "workload": "calibrated-cpu-1ms"
+      },
+      "mad_ratio": 0.1386769214635602
+    },
+    {
+      "case_id": "distributed.system.echo-4k",
+      "dimensions": {
+        "workers": 1,
+        "workload": "echo-4k"
+      },
+      "mad_ratio": 0.11294659487672888
+    },
+    {
+      "case_id": "distributed.system.noop",
+      "dimensions": {
+        "workers": 1,
+        "workload": "noop"
+      },
+      "mad_ratio": 0.10386605630632915
+    },
+    {
+      "case_id": "distributed.system.resource-ref",
+      "dimensions": {
+        "workers": 1,
+        "workload": "resource-ref"
+      },
+      "mad_ratio": 0.11516261322402456
+    },
+    {
+      "case_id": "distributed.system.worker-coverage",
+      "dimensions": {
+        "workers": 1,
+        "workload": "worker-coverage"
+      },
+      "mad_ratio": 0.4270802742029149
+    },
+    {
+      "case_id": "distributed.system.calibrated-cpu-10ms",
+      "dimensions": {
+        "workers": 4,
+        "workload": "calibrated-cpu-10ms"
+      },
+      "mad_ratio": 0.11453185802747458
+    },
+    {
+      "case_id": "distributed.system.calibrated-cpu-1ms",
+      "dimensions": {
+        "workers": 4,
+        "workload": "calibrated-cpu-1ms"
+      },
+      "mad_ratio": 0.13336127801425884
+    },
+    {
+      "case_id": "distributed.system.echo-4k",
+      "dimensions": {
+        "workers": 4,
+        "workload": "echo-4k"
+      },
+      "mad_ratio": 0.12793472121509608
+    },
+    {
+      "case_id": "distributed.system.noop",
+      "dimensions": {
+        "workers": 4,
+        "workload": "noop"
+      },
+      "mad_ratio": 0.1410889499620624
+    },
+    {
+      "case_id": "distributed.system.resource-ref",
+      "dimensions": {
+        "workers": 4,
+        "workload": "resource-ref"
+      },
+      "mad_ratio": 0.13742980215120892
+    },
+    {
+      "case_id": "distributed.system.calibrated-cpu-10ms",
+      "dimensions": {
+        "workers": 16,
+        "workload": "calibrated-cpu-10ms"
+      },
+      "mad_ratio": 0.1369167203350505
+    },
+    {
+      "case_id": "distributed.system.calibrated-cpu-1ms",
+      "dimensions": {
+        "workers": 16,
+        "workload": "calibrated-cpu-1ms"
+      },
+      "mad_ratio": 0.5827062937072591
+    },
+    {
+      "case_id": "distributed.system.echo-4k",
+      "dimensions": {
+        "workers": 16,
+        "workload": "echo-4k"
+      },
+      "mad_ratio": 0.2633583630909629
+    },
+    {
+      "case_id": "distributed.system.noop",
+      "dimensions": {
+        "workers": 16,
+        "workload": "noop"
+      },
+      "mad_ratio": 0.5013495342555299
+    },
+    {
+      "case_id": "distributed.system.resource-ref",
+      "dimensions": {
+        "workers": 16,
+        "workload": "resource-ref"
+      },
+      "mad_ratio": 0.6677349267854121
+    },
+    {
+      "case_id": "distributed.system.worker-coverage",
+      "dimensions": {
+        "workers": 16,
+        "workload": "worker-coverage"
+      },
+      "mad_ratio": 0.25098803068714437
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-1.top-k-1",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 1
+      },
+      "mad_ratio": 0.112
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-1.top-k-16",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 16
+      },
+      "mad_ratio": 0.12312312312312312
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-1.top-k-4",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 4
+      },
+      "mad_ratio": 0.12312312312312312
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-1.top-k-8",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 8
+      },
+      "mad_ratio": 0.1404109589041096
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-16.top-k-1",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 16,
+        "top_k": 1
+      },
+      "mad_ratio": 0.10692093421898435
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-4.top-k-1",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 1
+      },
+      "mad_ratio": 0.15676359039190899
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-4.top-k-16",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 16
+      },
+      "mad_ratio": 0.12443778110944528
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-4.top-k-4",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 4
+      },
+      "mad_ratio": 0.11066666666666666
+    },
+    {
+      "case_id": "placement.cpu.nodes-1.variants-4.top-k-8",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 8
+      },
+      "mad_ratio": 0.12612612612612611
+    },
+    {
+      "case_id": "placement.cpu.nodes-4.variants-4.top-k-1",
+      "dimensions": {
+        "workload": "cpu",
+        "latency_class": "interactive",
+        "nodes": 4,
+        "variants_per_node": 4,
+        "top_k": 1
+      },
+      "mad_ratio": 0.10479797979797979
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-1",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 1
+      },
+      "mad_ratio": 0.1404109589041096
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-16",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 16
+      },
+      "mad_ratio": 0.12425149700598802
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-4",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 4
+      },
+      "mad_ratio": 0.12312312312312312
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-1.top-k-8",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 8
+      },
+      "mad_ratio": 0.12312312312312312
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-4.top-k-1",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 1
+      },
+      "mad_ratio": 0.10493046776232617
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-4.top-k-16",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 16
+      },
+      "mad_ratio": 0.12443778110944528
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-4.top-k-4",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 4
+      },
+      "mad_ratio": 0.11066666666666666
+    },
+    {
+      "case_id": "placement.cuda.nodes-1.variants-4.top-k-8",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 8
+      },
+      "mad_ratio": 0.12443778110944528
+    },
+    {
+      "case_id": "placement.cuda.nodes-4.variants-1.top-k-1",
+      "dimensions": {
+        "workload": "cuda",
+        "latency_class": "batch",
+        "nodes": 4,
+        "variants_per_node": 1,
+        "top_k": 1
+      },
+      "mad_ratio": 0.12275449101796407
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-1.top-k-1",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 1
+      },
+      "mad_ratio": 0.1404109589041096
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-1.top-k-16",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 16
+      },
+      "mad_ratio": 0.12574850299401197
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-1.top-k-4",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 4
+      },
+      "mad_ratio": 0.1404109589041096
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-1.top-k-8",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 1,
+        "top_k": 8
+      },
+      "mad_ratio": 0.1404109589041096
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-16.top-k-1",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 16,
+        "top_k": 1
+      },
+      "mad_ratio": 0.10955914447839371
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-4.top-k-1",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 1
+      },
+      "mad_ratio": 0.11066666666666666
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-4.top-k-16",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 16
+      },
+      "mad_ratio": 0.12443778110944528
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-4.top-k-4",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 4
+      },
+      "mad_ratio": 0.112
+    },
+    {
+      "case_id": "placement.metal.nodes-1.variants-4.top-k-8",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 1,
+        "variants_per_node": 4,
+        "top_k": 8
+      },
+      "mad_ratio": 0.12443778110944528
+    },
+    {
+      "case_id": "placement.metal.nodes-4.variants-1.top-k-16",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 4,
+        "variants_per_node": 1,
+        "top_k": 16
+      },
+      "mad_ratio": 0.1404109589041096
+    },
+    {
+      "case_id": "placement.metal.nodes-4.variants-1.top-k-8",
+      "dimensions": {
+        "workload": "metal",
+        "latency_class": "soft_realtime",
+        "nodes": 4,
+        "variants_per_node": 1,
+        "top_k": 8
+      },
+      "mad_ratio": 0.12312312312312312
+    },
+    {
+      "case_id": "distributed.durability.committed",
+      "dimensions": {
+        "fault_stage": "committed"
+      },
+      "mad_ratio": 0.3430727263626808
+    },
+    {
+      "case_id": "distributed.durability.output-staged",
+      "dimensions": {
+        "fault_stage": "output_staged"
+      },
+      "mad_ratio": 0.26483586209967386
+    },
+    {
+      "case_id": "distributed.durability.running",
+      "dimensions": {
+        "fault_stage": "running"
+      },
+      "mad_ratio": 0.23554603854389722
+    }
+  ],
+  "issue23": {
+    "passed": true,
+    "content_fixed_total": {
+      "aggregate_content_bytes": 4294967296,
+      "c4_median_bytes_per_second": 1750278239.2046463,
+      "c16_median_bytes_per_second": 2062833223.8270338,
+      "c16_to_c4_ratio": 1.1785744561187124,
+      "minimum_ratio": 0.9,
+      "evaluated": true,
+      "passed": true
+    },
+    "registry_window_jitter": [
+      {
+        "acceptance": "durable",
+        "mutations": 10000,
+        "window_mutations": 100,
+        "expected_sync_points_per_mutation": 3.0,
+        "mad_ratio": 0.02367629121969267,
+        "maximum_mad_ratio": 0.1,
+        "evaluated": true,
+        "passed": true
+      },
+      {
+        "acceptance": "critical",
+        "mutations": 10000,
+        "window_mutations": 100,
+        "expected_sync_points_per_mutation": 4.0,
+        "mad_ratio": 0.07760539352096335,
+        "maximum_mad_ratio": 0.1,
+        "evaluated": true,
+        "passed": true
+      }
+    ]
+  },
+  "limitations": [
+    "No regression claim is made without an approved baseline from the same environment.",
+    "Per-transfer 1 GiB concurrency cases are capacity stress; only the fixed-total lane is used for scaling regression decisions.",
+    "Loopback local IPC does not represent real network latency or throughput."
+  ]
+}
