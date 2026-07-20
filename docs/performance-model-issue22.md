@@ -25,6 +25,7 @@ Reference mode expands these fixed dimensions:
 - registry: fast mode at 10,000, 100,000 and 1,000,000 mutations; durable and critical modes at
   10,000 mutations each;
 - content: 1 MiB, 64 MiB and 1 GiB at concurrency 1, 4 and 16, with 256 KiB chunks;
+- content scaling regression: a fixed 4 GiB aggregate at concurrency 4 and 16;
 - durability faults: process-state recovery after running, output-staged and committed transitions.
 
 Content cases distinguish cold miss, verified offline hit and half-file resume. The production
@@ -36,6 +37,13 @@ throughput is reported in `mutations/s`; generic operation cases retain `units/s
 Each content sample removes its completed destination set outside the timing window. This bounds
 benchmark scratch storage to one source plus one sample's concurrent destinations; reference
 sampling must not multiply retained 1 GiB files by the sample count.
+
+The original per-transfer matrix is a capacity-stress lane: `1 GiB, c16` moves and persists 16 GiB
+per sample, so it is not compared directly with the 4 GiB aggregate `1 GiB, c4` case. Issue 23 adds
+a fixed-total lane that compares `4 x 1 GiB` with `16 x 256 MiB`, rotates concurrency order between
+process runs and performs one unreported warmup. Only this equal-work lane applies the c16/c4
+throughput regression threshold. Reports record aggregate bytes and aggregate-by-RAM pressure for
+both lanes.
 
 After a complete raw matrix has been retained, `--reuse-raw --skip-build` rebuilds only the report
 and analysis. The command first verifies every expected process-run, registry, content and fault file
@@ -53,3 +61,7 @@ mutation (and critical also synchronizes metadata replicas). Ten thousand mutati
 ten thousand fsync observations per process run. Crossing 100,000/1,000,000 with those modes would
 multiply wall time without adding an independent dimension, so the large-scale state/index/compaction
 cases use fast acknowledgement while the 10,000 case compares all three acknowledgement contracts.
+The mutation timing lane disables automatic compaction because snapshot cost is already measured as
+an explicit stage. For the 10,000-mutation comparison it also reports fixed 100-mutation windows,
+which provide median/p95/p99/MAD evidence instead of treating one complete process run as one fsync
+sample. Durable records three expected synchronous points per mutation; critical records four.

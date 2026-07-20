@@ -22,9 +22,12 @@ struct RawReport {
     benchmark: &'static str,
     boundary: &'static str,
     content_bytes: u64,
+    aggregate_content_bytes: u64,
     chunk_bytes: usize,
     concurrency: usize,
     samples: usize,
+    warmup_samples: usize,
+    lane: String,
     cases: Vec<RawCase>,
     correctness: Correctness,
 }
@@ -56,9 +59,24 @@ enum TransferKind {
 #[tokio::main(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)]
 async fn main() {
-    let content_bytes = env_u64("MUTSUKI_CONTENT_BYTES", 1024 * 1024);
     let concurrency = env_usize("MUTSUKI_CONTENT_CONCURRENCY", 1);
     let samples = env_usize("MUTSUKI_CONTENT_SAMPLES", 5);
+    let warmup_samples = env_usize("MUTSUKI_CONTENT_WARMUP_SAMPLES", 0);
+    let lane = env::var("MUTSUKI_CONTENT_LANE").unwrap_or_else(|_| "per-transfer".into());
+    let content_bytes = match env::var("MUTSUKI_CONTENT_AGGREGATE_BYTES") {
+        Ok(value) => {
+            let aggregate = value
+                .parse::<u64>()
+                .expect("MUTSUKI_CONTENT_AGGREGATE_BYTES must be an integer");
+            let concurrency_u64 = u64::try_from(concurrency).expect("concurrency fits u64");
+            assert!(
+                aggregate > 0 && aggregate % concurrency_u64 == 0,
+                "MUTSUKI_CONTENT_AGGREGATE_BYTES must be positive and divisible by concurrency"
+            );
+            aggregate / concurrency_u64
+        }
+        Err(_) => env_u64("MUTSUKI_CONTENT_BYTES", 1024 * 1024),
+    };
     assert!(content_bytes > 0, "MUTSUKI_CONTENT_BYTES must be positive");
     assert!(
         concurrency > 0,
@@ -81,76 +99,31 @@ async fn main() {
     let mut hit = Vec::with_capacity(samples);
     let mut resume = Vec::with_capacity(samples);
 
+    for sample in 0..warmup_samples {
+        run_sample(
+            sample,
+            &source_path,
+            &content_id,
+            concurrency,
+            content_bytes,
+            secret.clone(),
+        )
+        .await;
+    }
+
     for sample in 0..samples {
-        let destinations = destinations(temp.path(), "sample", sample, concurrency);
-        miss.push(
-            transfer_group(
-                TransferKind::Miss,
-                sample,
-                &source_path,
-                &content_id,
-                &destinations,
-                secret.clone(),
-            )
-            .await,
-        );
-
-        let hit_started = Instant::now();
-        let mut hit_tasks = JoinSet::new();
-        for (index, destination) in destinations.iter().enumerate() {
-            let localizer = LinkResourceLocalizer::new(
-                NodeId(format!("content-worker-{sample}-{index}")),
-                secret.clone(),
-                destination,
-                content_bytes,
-                Duration::from_secs(120),
-            )
-            .expect("cache-hit localizer");
-            let resource = DirectDataRef {
-                owner_node: NodeId(format!("offline-origin-{sample}-{index}")),
-                content_id: content_id.clone(),
-                endpoint_hint: "link-local://origin-must-not-be-contacted".into(),
-            };
-            hit_tasks.spawn(async move {
-                localizer
-                    .localize(std::slice::from_ref(&resource))
-                    .await
-                    .expect("verified cache hit");
-            });
-        }
-        while let Some(result) = hit_tasks.join_next().await {
-            result.expect("cache-hit task");
-        }
-        hit.push(hit_started.elapsed().as_nanos());
-
-        let resume_offset = content_bytes / 2;
-        for destination in &destinations {
-            let final_path = destination.join(&content_id.digest);
-            fs::remove_file(final_path).expect("remove cold localization result");
-            seed_partial(
-                &source_path,
-                &destination.join(format!("{}.partial", content_id.digest)),
-                resume_offset,
-            );
-        }
-        resume.push(
-            transfer_group(
-                TransferKind::Resume,
-                sample,
-                &source_path,
-                &content_id,
-                &destinations,
-                secret.clone(),
-            )
-            .await,
-        );
-        for destination in destinations {
-            fs::remove_dir_all(&destination).expect("remove completed sample destination");
-            assert!(
-                !destination.exists(),
-                "completed sample destination must not be retained"
-            );
-        }
+        let timings = run_sample(
+            sample,
+            &source_path,
+            &content_id,
+            concurrency,
+            content_bytes,
+            secret.clone(),
+        )
+        .await;
+        miss.push(timings.0);
+        hit.push(timings.1);
+        resume.push(timings.2);
     }
 
     let concurrency_u64 = u64::try_from(concurrency).expect("concurrency fits u64");
@@ -194,9 +167,12 @@ async fn main() {
         benchmark: "content-localization",
         boundary: "authenticated-link-local-ipc-and-real-filesystem",
         content_bytes,
+        aggregate_content_bytes: full_bytes,
         chunk_bytes: CHUNK_BYTES,
         concurrency,
         samples,
+        warmup_samples,
+        lane,
         cases,
         correctness: Correctness {
             digest_mismatches: 0,
@@ -210,6 +186,87 @@ async fn main() {
     )
     .expect("write content benchmark report");
     println!("{}", output.display());
+}
+
+async fn run_sample(
+    sample: usize,
+    source_path: &Path,
+    content_id: &ContentId,
+    concurrency: usize,
+    content_bytes: u64,
+    secret: Arc<[u8]>,
+) -> (u128, u128, u128) {
+    let destinations = destinations(
+        source_path.parent().expect("content benchmark root"),
+        "sample",
+        sample,
+        concurrency,
+    );
+    let miss = transfer_group(
+        TransferKind::Miss,
+        sample,
+        source_path,
+        content_id,
+        &destinations,
+        secret.clone(),
+    )
+    .await;
+
+    let hit_started = Instant::now();
+    let mut hit_tasks = JoinSet::new();
+    for (index, destination) in destinations.iter().enumerate() {
+        let localizer = LinkResourceLocalizer::new(
+            NodeId(format!("content-worker-{sample}-{index}")),
+            secret.clone(),
+            destination,
+            content_bytes,
+            Duration::from_secs(120),
+        )
+        .expect("cache-hit localizer");
+        let resource = DirectDataRef {
+            owner_node: NodeId(format!("offline-origin-{sample}-{index}")),
+            content_id: content_id.clone(),
+            endpoint_hint: "link-local://origin-must-not-be-contacted".into(),
+        };
+        hit_tasks.spawn(async move {
+            localizer
+                .localize(std::slice::from_ref(&resource))
+                .await
+                .expect("verified cache hit");
+        });
+    }
+    while let Some(result) = hit_tasks.join_next().await {
+        result.expect("cache-hit task");
+    }
+    let hit = hit_started.elapsed().as_nanos();
+
+    let resume_offset = content_bytes / 2;
+    for destination in &destinations {
+        let final_path = destination.join(&content_id.digest);
+        fs::remove_file(final_path).expect("remove cold localization result");
+        seed_partial(
+            source_path,
+            &destination.join(format!("{}.partial", content_id.digest)),
+            resume_offset,
+        );
+    }
+    let resume = transfer_group(
+        TransferKind::Resume,
+        sample,
+        source_path,
+        content_id,
+        &destinations,
+        secret,
+    )
+    .await;
+    for destination in destinations {
+        fs::remove_dir_all(&destination).expect("remove completed sample destination");
+        assert!(
+            !destination.exists(),
+            "completed sample destination must not be retained"
+        );
+    }
+    (miss, hit, resume)
 }
 
 async fn transfer_group(

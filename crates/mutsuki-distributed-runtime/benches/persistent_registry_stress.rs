@@ -49,7 +49,12 @@ fn main() {
         },
         _ => panic!("MUTSUKI_REGISTRY_ACCEPTANCE must be fast, durable, or critical"),
     };
+    let window_mutations = env::var("MUTSUKI_REGISTRY_WINDOW_MUTATIONS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(100);
     assert!(mutations > 0);
+    assert!(window_mutations > 0);
     let task_count = mutations.div_ceil(4);
     let max_tasks = usize::try_from(task_count).expect("stress task count fits usize");
     let temp = TempDir::new().expect("create stress directory");
@@ -70,13 +75,26 @@ fn main() {
         RegistryOptions {
             max_tasks,
             max_record_bytes: 64 * 1024,
-            compact_after_records: (mutations / 4).max(1),
+            compact_after_records: u64::MAX,
             compact_after_bytes: u64::MAX,
         },
     )
     .expect("open registry");
     let input = ContentId::new("sha256", "stress-input", 0, "none");
     let started = Instant::now();
+    let mut window_started = Instant::now();
+    let mut window_elapsed = Vec::new();
+    let mut window_counts = Vec::new();
+    let mut window_committed = 0_u64;
+    let mut record_window = |committed: u64| {
+        if !committed.is_multiple_of(window_mutations) && committed != mutations {
+            return;
+        }
+        window_elapsed.push(window_started.elapsed().as_nanos());
+        window_counts.push(committed - window_committed);
+        window_committed = committed;
+        window_started = Instant::now();
+    };
     let mut committed = 0_u64;
     for task_number in 0..task_count {
         let task_number = usize::try_from(task_number).expect("task number fits usize");
@@ -85,6 +103,7 @@ fn main() {
             .submit(spec(task_number, &input, acceptance), &catalog)
             .expect("submit stress task");
         committed += 1;
+        record_window(committed);
         if committed == mutations {
             break;
         }
@@ -92,16 +111,19 @@ fn main() {
             .assign(&task_id, 1, NodeId("stress-worker".into()), None, 1)
             .expect("assign stress task");
         committed += 1;
+        record_window(committed);
         if committed == mutations {
             break;
         }
         registry.mark_running(&task_id, 1).expect("run stress task");
         committed += 1;
+        record_window(committed);
         if committed == mutations {
             break;
         }
         registry.cancel(&task_id).expect("cancel stress task");
         committed += 1;
+        record_window(committed);
     }
     assert_eq!(committed, mutations);
     let mutation_elapsed = started.elapsed();
@@ -128,7 +150,7 @@ fn main() {
         RegistryOptions {
             max_tasks,
             max_record_bytes: 64 * 1024,
-            compact_after_records: (mutations / 4).max(1),
+            compact_after_records: u64::MAX,
             compact_after_bytes: u64::MAX,
         },
     )
@@ -143,6 +165,11 @@ fn main() {
             .query(&GlobalTaskId(format!("stress-{}", task_count - 1)))
             .is_some()
     );
+    let expected_sync_points_per_mutation = match acceptance {
+        AcceptanceMode::Fast => 0,
+        AcceptanceMode::Durable => 3,
+        AcceptanceMode::Critical { minimum_replicas } => u64::from(minimum_replicas) + 1,
+    };
 
     let report = json!({
         "schema": "mutsuki.distributed.registry.raw/v1",
@@ -150,6 +177,9 @@ fn main() {
         "mutations": mutations,
         "tasks": task_count,
         "mutation_ns": mutation_elapsed.as_nanos(),
+        "mutation_window_ns": window_elapsed,
+        "mutation_window_counts": window_counts,
+        "window_mutations": window_mutations,
         "mutations_per_second": mutations_per_second,
         "compact_ns": compact_elapsed.as_nanos(),
         "reopen_ns": reopen_elapsed.as_nanos(),
@@ -157,9 +187,12 @@ fn main() {
         "wal_bytes_after_compaction": compacted.wal_bytes,
         "snapshot_bytes": fs::metadata(&compacted.snapshot_path).map_or(0, |metadata| metadata.len()),
         "replica_count": replica_count,
+        "expected_sync_points_per_mutation": expected_sync_points_per_mutation,
+        "compaction_during_mutation": false,
         "last_log_index": reopened.stats().unwrap().last_log_index,
         "correctness": {
             "mutations_committed": committed,
+            "wal_present_before_compaction": pre_compact.wal_bytes > 0,
             "tail_recovered_bytes": compacted.recovered_tail_bytes,
             "first_task_present": reopened.query(&GlobalTaskId("stress-0".into())).is_some(),
             "last_task_present": reopened.query(&GlobalTaskId(format!("stress-{}", task_count - 1))).is_some(),

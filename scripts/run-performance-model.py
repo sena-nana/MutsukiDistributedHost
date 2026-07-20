@@ -37,6 +37,13 @@ def canonical_hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def rotated(values: list[int], offset: int) -> list[int]:
+    if not values:
+        return []
+    position = offset % len(values)
+    return values[position:] + values[:position]
+
+
 def git(path: Path, *args: str) -> str:
     return subprocess.check_output(
         ["git", "-C", str(path), *args], text=True, stderr=subprocess.DEVNULL
@@ -109,6 +116,7 @@ def environment(mode: str, process_runs: int) -> dict[str, Any]:
             "mode": mode,
             "process_runs": process_runs,
             "content_chunk_bytes": 256 * 1024,
+            "content_warmup_samples": 1,
             "transport": "loopback-local-ipc",
         },
         "network": {
@@ -215,13 +223,16 @@ def run_raw(args: argparse.Namespace, raw: Path, process_run: int) -> list[Path]
                     env={
                         "MUTSUKI_REGISTRY_STRESS_MUTATIONS": str(mutations),
                         "MUTSUKI_REGISTRY_ACCEPTANCE": acceptance,
+                        "MUTSUKI_REGISTRY_WINDOW_MUTATIONS": str(
+                            100 if mutations <= 10_000 else mutations
+                        ),
                         "MUTSUKI_BENCH_OUTPUT": str(output),
                     },
                 )
             generated.append(output)
 
     for size in args.content_sizes:
-        for concurrency in args.content_concurrency:
+        for concurrency in rotated(args.content_concurrency, process_run):
             output = raw / f"content-{size}-{concurrency}-{process_run}.json"
             if not reusable_raw(args, output):
                 command(
@@ -230,10 +241,29 @@ def run_raw(args: argparse.Namespace, raw: Path, process_run: int) -> list[Path]
                         "MUTSUKI_CONTENT_BYTES": str(size),
                         "MUTSUKI_CONTENT_CONCURRENCY": str(concurrency),
                         "MUTSUKI_CONTENT_SAMPLES": str(args.content_samples),
+                        "MUTSUKI_CONTENT_WARMUP_SAMPLES": "1",
+                        "MUTSUKI_CONTENT_LANE": "per-transfer-capacity-stress",
                         "MUTSUKI_BENCH_OUTPUT": str(output),
                     },
                 )
             generated.append(output)
+
+    for concurrency in rotated(args.content_scaling_concurrency, process_run):
+        aggregate = args.content_scaling_total_bytes
+        output = raw / f"content-fixed-total-{aggregate}-{concurrency}-{process_run}.json"
+        if not reusable_raw(args, output):
+            command(
+                [str(args.content_binary)],
+                env={
+                    "MUTSUKI_CONTENT_AGGREGATE_BYTES": str(aggregate),
+                    "MUTSUKI_CONTENT_CONCURRENCY": str(concurrency),
+                    "MUTSUKI_CONTENT_SAMPLES": str(args.content_samples),
+                    "MUTSUKI_CONTENT_WARMUP_SAMPLES": "1",
+                    "MUTSUKI_CONTENT_LANE": "fixed-total-scaling",
+                    "MUTSUKI_BENCH_OUTPUT": str(output),
+                },
+            )
+        generated.append(output)
 
     faults_path = raw / f"faults-{process_run}.json"
     if not reusable_raw(args, faults_path):
@@ -355,12 +385,17 @@ def merge_placement(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, 
 
 def merge_registry(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    windowed: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
     correctness: dict[str, int] = defaultdict(int)
     for path in paths:
         report = load(path)
         grouped[(report["acceptance"], report["mutations"])].append(report)
+        if report["mutations"] <= 10_000:
+            windowed[(report["acceptance"], report["mutations"])].append(report)
         if report["correctness"]["mutations_committed"] != report["mutations"]:
             correctness["lost_mutations"] += 1
+        if not report["correctness"].get("wal_present_before_compaction", False):
+            correctness["missing_pre_compaction_wal"] += 1
         if not report["correctness"]["first_task_present"] or not report["correctness"]["last_task_present"]:
             correctness["missing_reopened_tasks"] += 1
     cases = []
@@ -370,7 +405,11 @@ def merge_registry(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, i
             case(
                 "distributed.registry.mutate",
                 "time",
-                {"acceptance": acceptance, "mutations": mutations},
+                {
+                    "acceptance": acceptance,
+                    "mutations": mutations,
+                    "compaction_during_mutation": False,
+                },
                 latency,
                 units=float(mutations),
                 throughput_unit="mutations/s",
@@ -378,6 +417,9 @@ def merge_registry(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, i
                 metrics={
                     "disk_bytes": float(max(item["snapshot_bytes"] for item in items)),
                     "replica_count": float(items[0]["replica_count"]),
+                    "expected_sync_points_per_mutation": float(
+                        items[0]["expected_sync_points_per_mutation"]
+                    ),
                 },
                 stages={
                     "compact_median_ns": statistics.median(float(item["compact_ns"]) for item in items),
@@ -385,32 +427,98 @@ def merge_registry(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, i
                 },
             )
         )
+    for (acceptance, mutations), items in sorted(windowed.items()):
+        elapsed = [
+            float(value)
+            for item in items
+            for value in item["mutation_window_ns"]
+        ]
+        counts = [
+            int(value)
+            for item in items
+            for value in item["mutation_window_counts"]
+        ]
+        if not elapsed or len(elapsed) != len(counts) or len(set(counts)) != 1:
+            raise ValueError("registry mutation windows must be non-empty and fixed-size")
+        cases.append(
+            case(
+                "distributed.registry.mutation-window",
+                "time",
+                {
+                    "acceptance": acceptance,
+                    "mutations": mutations,
+                    "window_mutations": counts[0],
+                    "compaction_during_mutation": False,
+                },
+                elapsed,
+                units=float(counts[0]),
+                throughput_unit="mutations/s",
+                counters=dict(correctness),
+                metrics={
+                    "expected_sync_points_per_mutation": float(
+                        items[0]["expected_sync_points_per_mutation"]
+                    )
+                },
+            )
+        )
     return cases, dict(correctness)
 
 
-def merge_content(paths: list[Path]) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    grouped: dict[tuple[int, int, str], list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
+def merge_content(
+    paths: list[Path], ram_bytes: int
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    grouped: dict[
+        tuple[str, int, int, int, str],
+        list[tuple[dict[str, Any], dict[str, Any]]],
+    ] = defaultdict(list)
     correctness: dict[str, int] = defaultdict(int)
     for path in paths:
         report = load(path)
         for name, value in report["correctness"].items():
             correctness[name] += int(value)
         for item in report["cases"]:
-            grouped[(report["content_bytes"], report["concurrency"], item["name"])].append((report, item))
+            aggregate = int(
+                report.get(
+                    "aggregate_content_bytes",
+                    report["content_bytes"] * report["concurrency"],
+                )
+            )
+            grouped[
+                (
+                    report.get("lane", "per-transfer"),
+                    report["content_bytes"],
+                    aggregate,
+                    report["concurrency"],
+                    item["name"],
+                )
+            ].append((report, item))
     cases = []
-    for (size, concurrency, name), items in sorted(grouped.items()):
+    for (lane, size, aggregate, concurrency, name), items in sorted(grouped.items()):
         latency = [float(value) for _, item in items for value in item["elapsed_ns"]]
         first_report, first = items[0]
+        case_id = (
+            name.replace("content.localization.", "content.localization.fixed-total.")
+            if lane == "fixed-total-scaling"
+            else name
+        )
         cases.append(
             case(
-                name,
+                case_id,
                 "time",
-                {"content_bytes": size, "concurrency": concurrency, "chunk_bytes": first_report["chunk_bytes"]},
+                {
+                    "lane": lane,
+                    "content_bytes": size,
+                    "aggregate_content_bytes": aggregate,
+                    "ram_pressure_ratio": aggregate / max(1, ram_bytes),
+                    "concurrency": concurrency,
+                    "chunk_bytes": first_report["chunk_bytes"],
+                },
                 latency,
-                units=float(size * concurrency),
+                units=float(aggregate),
                 throughput_unit="bytes/s",
                 counters=dict(correctness),
                 metrics={
+                    "aggregate_bytes_per_sample": float(aggregate),
                     "ipc_bytes": float(first["ipc_bytes_per_sample"]),
                     "disk_bytes": float(first["disk_read_bytes_per_sample"] + first["disk_write_bytes_per_sample"]),
                     "duplicate_bytes_avoided": float(first["duplicate_bytes_avoided_per_sample"]),
@@ -452,9 +560,73 @@ def analyze(cases: list[dict[str, Any]], counters: dict[str, int]) -> dict[str, 
         latency = item["metrics"].get("latency_ns")
         if latency and latency["median"] > 0 and latency["mad"] / latency["median"] > 0.10:
             noisy.append({"case_id": item["case_id"], "dimensions": item["dimensions"], "mad_ratio": latency["mad"] / latency["median"]})
+    fixed_total = {
+        item["dimensions"]["concurrency"]: item
+        for item in cases
+        if item["case_id"] == "content.localization.fixed-total.miss"
+    }
+    content_diagnostic: dict[str, Any]
+    if set(fixed_total) >= {4, 16}:
+        c4 = fixed_total[4]["metrics"]["throughput_per_second"]["median"]
+        c16 = fixed_total[16]["metrics"]["throughput_per_second"]["median"]
+        ratio = c16 / max(1.0, c4)
+        aggregate = fixed_total[4]["dimensions"]["aggregate_content_bytes"]
+        evaluated = aggregate >= 4 * 1024 * 1024 * 1024
+        content_diagnostic = {
+            "aggregate_content_bytes": aggregate,
+            "c4_median_bytes_per_second": c4,
+            "c16_median_bytes_per_second": c16,
+            "c16_to_c4_ratio": ratio,
+            "minimum_ratio": 0.90,
+            "evaluated": evaluated,
+            "passed": not evaluated or ratio >= 0.90,
+        }
+        if not evaluated:
+            content_diagnostic["reason"] = (
+                "smoke covers fixed-total behavior; the scaling threshold applies to the 4 GiB reference lane"
+            )
+    else:
+        content_diagnostic = {"passed": False, "reason": "fixed-total c4/c16 cases are missing"}
+    registry_diagnostics = []
+    for acceptance in ("durable", "critical"):
+        candidates = [
+            item
+            for item in cases
+            if item["case_id"] == "distributed.registry.mutation-window"
+            and item["dimensions"]["acceptance"] == acceptance
+        ]
+        if not candidates:
+            registry_diagnostics.append(
+                {"acceptance": acceptance, "passed": False, "reason": "window case is missing"}
+            )
+            continue
+        item = max(candidates, key=lambda value: value["dimensions"]["mutations"])
+        latency = item["metrics"]["latency_ns"]
+        ratio = latency["mad"] / max(1.0, latency["median"])
+        evaluated = latency["sample_count"] >= 3
+        registry_diagnostics.append(
+            {
+                "acceptance": acceptance,
+                "mutations": item["dimensions"]["mutations"],
+                "window_mutations": item["dimensions"]["window_mutations"],
+                "expected_sync_points_per_mutation": item["metrics"][
+                    "expected_sync_points_per_mutation"
+                ],
+                "mad_ratio": ratio,
+                "maximum_mad_ratio": 0.10,
+                "evaluated": evaluated,
+                "passed": not evaluated or ratio <= 0.10,
+            }
+        )
+    issue23_passed = content_diagnostic["passed"] and all(
+        item["passed"] for item in registry_diagnostics
+    )
     if any(counters.values()):
         classification = "framework-suspect"
         reason = "one or more zero-tolerance correctness counters are non-zero"
+    elif not issue23_passed:
+        classification = "issue23-regression"
+        reason = "fixed-total content scaling or durable registry jitter exceeds its fixed-reference threshold"
     elif noisy and len(noisy) / max(1, len(cases)) > 0.20:
         classification = "environmental-noise"
         reason = "more than 20% of latency cases have MAD above 10% of median"
@@ -470,8 +642,14 @@ def analyze(cases: list[dict[str, Any]], counters: dict[str, int]) -> dict[str, 
         "reason": reason,
         "correctness_counters": counters,
         "noisy_cases": noisy,
+        "issue23": {
+            "passed": issue23_passed,
+            "content_fixed_total": content_diagnostic,
+            "registry_window_jitter": registry_diagnostics,
+        },
         "limitations": [
             "No regression claim is made without an approved baseline from the same environment.",
+            "Per-transfer 1 GiB concurrency cases are capacity stress; only the fixed-total lane is used for scaling regression decisions.",
             "Loopback local IPC does not represent real network latency or throughput.",
         ],
     }
@@ -516,6 +694,11 @@ def expected_raw_paths(args: argparse.Namespace) -> list[Path]:
                     for size in args.content_sizes
                     for concurrency in args.content_concurrency
                 ],
+                *[
+                    args.raw_dir
+                    / f"content-fixed-total-{args.content_scaling_total_bytes}-{concurrency}-{process_run}.json"
+                    for concurrency in args.content_scaling_concurrency
+                ],
                 args.raw_dir / f"faults-{process_run}.json",
             ]
         )
@@ -554,6 +737,8 @@ def main() -> None:
     )
     args.content_sizes = [1024 * 1024] if args.mode == "smoke" else [1024 * 1024, 64 * 1024 * 1024, 1024 * 1024 * 1024]
     args.content_concurrency = [1, 4] if args.mode == "smoke" else [1, 4, 16]
+    args.content_scaling_total_bytes = 64 * 1024 * 1024 if args.mode == "smoke" else 4 * 1024 * 1024 * 1024
+    args.content_scaling_concurrency = [4, 16]
     args.content_samples = 2 if args.mode == "smoke" else 5
     args.fault_samples = 3 if args.mode == "smoke" else 20
     args.raw_dir.mkdir(parents=True, exist_ok=True)
@@ -578,11 +763,12 @@ def main() -> None:
     def by_name(prefix: str) -> list[Path]:
         return sorted(path for path in generated if path.name.startswith(prefix))
 
+    environment_value = environment(args.mode, args.process_runs)
     groups = [
         merge_system(by_name("system-")),
         merge_placement(by_name("placement-")),
         merge_registry(by_name("registry-")),
-        merge_content(by_name("content-")),
+        merge_content(by_name("content-"), int(environment_value["ram_bytes"])),
         merge_faults(by_name("faults-")),
     ]
     cases = [item for group, _ in groups for item in group]
@@ -591,7 +777,6 @@ def main() -> None:
         for name, value in values.items():
             counters[name] += value
     revisions = parse_repositories(args.repository)
-    environment_value = environment(args.mode, args.process_runs)
     generated_at = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
     report = {
         "schema_version": "mutsuki.performance.report/v1",
@@ -607,7 +792,7 @@ def main() -> None:
         "deployment": "real Controller, Worker, ServiceHost processes plus owner component benchmarks",
         "measurement_boundary": "loopback local IPC and real filesystem; no real-network claim",
         "sampling": {
-            "warmup_iterations": 0,
+            "warmup_iterations": 1,
             "samples_per_process": min(len(item["metrics"]["latency_ns"]["samples"]) for item in cases),
             "process_runs": args.process_runs,
         },
