@@ -232,7 +232,14 @@ async fn run_topology(
             "service_endpoint": services[index + 1].endpoint,
             "service_token_env": service_env,
             "content_directory": root.path().join(format!("content-{index}")),
-            "max_content_bytes": 2_u64 * 1024 * 1024 * 1024,
+            "localization_io": {
+                "max_active_reads": 4,
+                "max_active_writes": 4,
+                "max_active_hash_jobs": 4,
+                "max_queued_jobs": 64,
+                "max_buffered_bytes": 16_u64 * 1024 * 1024,
+                "max_content_bytes": 2_u64 * 1024 * 1024 * 1024,
+            },
             "advertisement": advertisement(
                 format!("worker-{unique}-{index}"),
                 format!("benchmark.worker.{index}"),

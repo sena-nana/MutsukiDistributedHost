@@ -1,0 +1,64 @@
+{
+  "schema_version": "mutsuki.distributed.content-localization.raw.v1",
+  "benchmark": "content-localization",
+  "boundary": "authenticated-link-local-ipc-and-real-filesystem",
+  "content_bytes": 1048576,
+  "aggregate_content_bytes": 1048576,
+  "chunk_bytes": 262144,
+  "concurrency": 1,
+  "samples": 5,
+  "warmup_samples": 1,
+  "lane": "issue24-baseline",
+  "cases": [
+    {
+      "name": "content.localization.miss",
+      "elapsed_ns": [
+        34044541,
+        35181625,
+        34263500,
+        34373833,
+        34014209
+      ],
+      "operations": 1,
+      "ipc_bytes_per_sample": 1048576,
+      "disk_read_bytes_per_sample": 1048576,
+      "disk_write_bytes_per_sample": 1048576,
+      "duplicate_bytes_avoided_per_sample": 0
+    },
+    {
+      "name": "content.localization.verified_hit",
+      "elapsed_ns": [
+        4284667,
+        4302500,
+        4266375,
+        4345167,
+        4425709
+      ],
+      "operations": 1,
+      "ipc_bytes_per_sample": 0,
+      "disk_read_bytes_per_sample": 1048576,
+      "disk_write_bytes_per_sample": 0,
+      "duplicate_bytes_avoided_per_sample": 1048576
+    },
+    {
+      "name": "content.localization.resume_half",
+      "elapsed_ns": [
+        35297250,
+        35103209,
+        34986208,
+        35555625,
+        32809250
+      ],
+      "operations": 1,
+      "ipc_bytes_per_sample": 524288,
+      "disk_read_bytes_per_sample": 1048576,
+      "disk_write_bytes_per_sample": 524288,
+      "duplicate_bytes_avoided_per_sample": 524288
+    }
+  ],
+  "correctness": {
+    "digest_mismatches": 0,
+    "incomplete_files": 0,
+    "unexpected_origin_contacts_on_hit": 0
+  }
+}

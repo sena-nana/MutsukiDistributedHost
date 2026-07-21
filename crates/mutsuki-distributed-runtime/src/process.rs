@@ -22,9 +22,6 @@ use mutsuki_link::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -32,418 +29,12 @@ use tokio::sync::Mutex as AsyncMutex;
 
 type HmacSha256 = Hmac<Sha256>;
 const AUTH_CONTEXT: &[u8] = b"mutsuki.distributed.local-session.v1";
-const DATA_CHUNK_BYTES: usize = 256 * 1024;
 static NONCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkerConnectionConfig {
     pub node_id: NodeId,
     pub address: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct FileContentSource {
-    pub content_id: mutsuki_runtime_contracts::ContentId,
-    pub path: PathBuf,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ContentRequest {
-    content_id: mutsuki_runtime_contracts::ContentId,
-    #[serde(default)]
-    offset: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ContentManifestReply {
-    result: Result<ContentManifest, WorkerFailure>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ContentManifest {
-    content_id: mutsuki_runtime_contracts::ContentId,
-    chunk_bytes: usize,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ContentTransferAck {
-    content_id: mutsuki_runtime_contracts::ContentId,
-}
-
-pub struct FileContentServer {
-    local_node: NodeId,
-    worker_node: NodeId,
-    address: String,
-    secret: Arc<[u8]>,
-    sources: BTreeMap<String, FileContentSource>,
-    timeout: Duration,
-}
-
-impl FileContentServer {
-    pub fn new(
-        local_node: NodeId,
-        worker_node: NodeId,
-        address: impl Into<String>,
-        secret: Arc<[u8]>,
-        sources: Vec<FileContentSource>,
-        timeout: Duration,
-    ) -> Result<Self, DistributedError> {
-        validate_secret(&secret)?;
-        let mut indexed = BTreeMap::new();
-        for source in sources {
-            validate_content_file(&source)?;
-            if indexed
-                .insert(source.content_id.digest.clone(), source)
-                .is_some()
-            {
-                return Err(invalid_process_config("duplicate content digest"));
-            }
-        }
-        if indexed.is_empty() {
-            return Err(invalid_process_config("content server requires a source"));
-        }
-        Ok(Self {
-            local_node,
-            worker_node,
-            address: address.into(),
-            secret,
-            sources: indexed,
-            timeout,
-        })
-    }
-
-    pub async fn serve_once(self) -> Result<(), DistributedError> {
-        let (server, listener) = self.bind()?;
-        server.serve_bound(listener).await
-    }
-
-    fn bind(self) -> Result<(Self, LocalListener), DistributedError> {
-        let listener = LocalListener::bind(
-            &LocalAddress(self.address.clone()),
-            endpoint_id(&self.local_node),
-            data_transport_budget(),
-        )
-        .map_err(map_transport)?;
-        Ok((self, listener))
-    }
-
-    async fn serve_bound(self, listener: LocalListener) -> Result<(), DistributedError> {
-        let mut connection = listener
-            .accept(endpoint_id(&self.worker_node))
-            .await
-            .map_err(map_transport)?;
-        authenticate_server(
-            &mut connection,
-            &self.local_node,
-            &self.worker_node,
-            &self.secret,
-            self.timeout,
-        )
-        .await?;
-        let request: ContentRequest =
-            serde_json::from_slice(&receive_message(&mut connection, self.timeout).await?)
-                .map_err(|_| protocol_error("content request is invalid"))?;
-        let Some(source) = self.sources.get(&request.content_id.digest) else {
-            let error = DistributedError::new(
-                DistributedErrorKind::LocalizationFailed,
-                "requested content is unavailable at the direct endpoint",
-            );
-            let reply = ContentManifestReply {
-                result: Err(WorkerFailure::from(&error)),
-            };
-            send_message(
-                &mut connection,
-                &serde_json::to_vec(&reply)
-                    .map_err(|_| protocol_error("content manifest encode failed"))?,
-                true,
-                self.timeout,
-            )
-            .await?;
-            return Ok(());
-        };
-        if source.content_id != request.content_id {
-            return Err(protocol_error(
-                "content descriptor does not match direct source",
-            ));
-        }
-        if request.offset > source.content_id.size {
-            return Err(protocol_error("content request offset exceeds source size"));
-        }
-        let reply = ContentManifestReply {
-            result: Ok(ContentManifest {
-                content_id: source.content_id.clone(),
-                chunk_bytes: DATA_CHUNK_BYTES,
-            }),
-        };
-        send_message(
-            &mut connection,
-            &serde_json::to_vec(&reply)
-                .map_err(|_| protocol_error("content manifest encode failed"))?,
-            true,
-            self.timeout,
-        )
-        .await?;
-        let mut file = File::open(&source.path).map_err(|_| content_io_error())?;
-        file.seek(SeekFrom::Start(request.offset))
-            .map_err(|_| content_io_error())?;
-        let mut chunk = vec![0; DATA_CHUNK_BYTES];
-        loop {
-            let read = file.read(&mut chunk).map_err(|_| content_io_error())?;
-            if read == 0 {
-                break;
-            }
-            send_message(&mut connection, &chunk[..read], false, self.timeout).await?;
-        }
-        let ack: ContentTransferAck =
-            serde_json::from_slice(&receive_message(&mut connection, self.timeout).await?)
-                .map_err(|_| protocol_error("content transfer acknowledgement is invalid"))?;
-        if ack.content_id != source.content_id {
-            return Err(protocol_error(
-                "content transfer acknowledgement does not match the source",
-            ));
-        }
-        Ok(())
-    }
-}
-
-pub struct LinkResourceLocalizer {
-    worker_node: NodeId,
-    secret: Arc<[u8]>,
-    destination: PathBuf,
-    max_content_bytes: u64,
-    timeout: Duration,
-    in_flight: AsyncMutex<BTreeMap<String, Arc<AsyncMutex<()>>>>,
-}
-
-impl LinkResourceLocalizer {
-    pub fn new(
-        worker_node: NodeId,
-        secret: Arc<[u8]>,
-        destination: impl Into<PathBuf>,
-        max_content_bytes: u64,
-        timeout: Duration,
-    ) -> Result<Self, DistributedError> {
-        validate_secret(&secret)?;
-        if max_content_bytes == 0 {
-            return Err(invalid_process_config(
-                "content localization budget must be positive",
-            ));
-        }
-        let destination = destination.into();
-        fs::create_dir_all(&destination).map_err(|_| content_io_error())?;
-        Ok(Self {
-            worker_node,
-            secret,
-            destination,
-            max_content_bytes,
-            timeout,
-            in_flight: AsyncMutex::new(BTreeMap::new()),
-        })
-    }
-
-    async fn localize_one(
-        &self,
-        resource: &mutsuki_distributed_contracts::DirectDataRef,
-    ) -> Result<(), DistributedError> {
-        validate_sha256_content_id(&resource.content_id)?;
-        if resource.content_id.size > self.max_content_bytes {
-            return Err(DistributedError::new(
-                DistributedErrorKind::CapacityExceeded,
-                "direct content exceeds the Worker localization budget",
-            ));
-        }
-        let content_lock = {
-            let mut in_flight = self.in_flight.lock().await;
-            in_flight
-                .entry(resource.content_id.digest.clone())
-                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
-                .clone()
-        };
-        let guard = content_lock.lock().await;
-        let result = self.localize_one_locked(resource).await;
-        drop(guard);
-        let mut in_flight = self.in_flight.lock().await;
-        if Arc::strong_count(&content_lock) == 2
-            && in_flight
-                .get(&resource.content_id.digest)
-                .is_some_and(|current| Arc::ptr_eq(current, &content_lock))
-        {
-            in_flight.remove(&resource.content_id.digest);
-        }
-        result
-    }
-
-    async fn localize_one_locked(
-        &self,
-        resource: &mutsuki_distributed_contracts::DirectDataRef,
-    ) -> Result<(), DistributedError> {
-        let final_path = self.destination.join(&resource.content_id.digest);
-        if final_path.exists() {
-            validate_content_file(&FileContentSource {
-                content_id: resource.content_id.clone(),
-                path: final_path,
-            })?;
-            return Ok(());
-        }
-        let temporary = final_path.with_extension("partial");
-        let resume_offset = match fs::metadata(&temporary) {
-            Ok(metadata) if metadata.len() <= resource.content_id.size => metadata.len(),
-            Ok(_) => {
-                let _ = fs::remove_file(&temporary);
-                return Err(DistributedError::new(
-                    DistributedErrorKind::Corrupt,
-                    "partial content exceeds the declared size",
-                ));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(_) => return Err(content_io_error()),
-        };
-        let address = resource
-            .endpoint_hint
-            .strip_prefix("link-local://")
-            .filter(|address| !address.is_empty())
-            .ok_or_else(|| {
-                DistributedError::new(
-                    DistributedErrorKind::LocalizationFailed,
-                    "direct resource endpoint is not a Link local stream",
-                )
-            })?;
-        let deadline = Instant::now() + self.timeout;
-        let mut connection = loop {
-            let context = mutsuki_link::ConnectContext {
-                deadline: Some(deadline),
-                ..mutsuki_link::ConnectContext::default()
-            };
-            match mutsuki_link::local::connect(
-                &LocalAddress(address.into()),
-                endpoint_id(&self.worker_node),
-                endpoint_id(&resource.owner_node),
-                data_transport_budget(),
-                &context,
-            )
-            .await
-            {
-                Ok(connection) => break connection,
-                Err(_) if Instant::now() < deadline => {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-                Err(error) => return Err(map_transport(error)),
-            }
-        };
-        authenticate_client(
-            &mut connection,
-            &self.worker_node,
-            &resource.owner_node,
-            &self.secret,
-            self.timeout,
-        )
-        .await?;
-        let request = ContentRequest {
-            content_id: resource.content_id.clone(),
-            offset: resume_offset,
-        };
-        send_message(
-            &mut connection,
-            &serde_json::to_vec(&request)
-                .map_err(|_| protocol_error("content request encode failed"))?,
-            true,
-            self.timeout,
-        )
-        .await?;
-        let reply: ContentManifestReply =
-            serde_json::from_slice(&receive_message(&mut connection, self.timeout).await?)
-                .map_err(|_| protocol_error("content manifest is invalid"))?;
-        let manifest = reply.result.map_err(|failure| {
-            DistributedError::new(failure.kind, "direct content endpoint rejected the request")
-        })?;
-        if manifest.content_id != resource.content_id
-            || manifest.chunk_bytes == 0
-            || manifest.chunk_bytes > DATA_CHUNK_BYTES
-        {
-            return Err(protocol_error("direct content manifest is incompatible"));
-        }
-        let mut output = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&temporary)
-            .map_err(|_| content_io_error())?;
-        let mut remaining = resource.content_id.size - resume_offset;
-        let mut hasher = Sha256::new();
-        if resume_offset > 0 {
-            let mut partial = File::open(&temporary).map_err(|_| content_io_error())?;
-            let mut chunk = vec![0; DATA_CHUNK_BYTES];
-            loop {
-                let read = partial.read(&mut chunk).map_err(|_| content_io_error())?;
-                if read == 0 {
-                    break;
-                }
-                hasher.update(&chunk[..read]);
-            }
-        }
-        while remaining > 0 {
-            let chunk = receive_message(&mut connection, self.timeout).await?;
-            if chunk.is_empty()
-                || chunk.len() > manifest.chunk_bytes
-                || u64::try_from(chunk.len()).unwrap_or(u64::MAX) > remaining
-            {
-                let _ = fs::remove_file(&temporary);
-                return Err(protocol_error("direct content chunk violates the manifest"));
-            }
-            output.write_all(&chunk).map_err(|_| content_io_error())?;
-            hasher.update(&chunk);
-            remaining -= u64::try_from(chunk.len()).expect("chunk fits u64");
-        }
-        output.sync_all().map_err(|_| content_io_error())?;
-        let digest = format!("{:x}", hasher.finalize());
-        if resource.content_id.algorithm != "sha256" || digest != resource.content_id.digest {
-            drop(output);
-            let _ = fs::remove_file(&temporary);
-            return Err(DistributedError::new(
-                DistributedErrorKind::Corrupt,
-                "direct content digest verification failed",
-            ));
-        }
-        drop(output);
-        fs::rename(&temporary, &final_path).map_err(|_| content_io_error())?;
-        send_message(
-            &mut connection,
-            &serde_json::to_vec(&ContentTransferAck {
-                content_id: resource.content_id.clone(),
-            })
-            .map_err(|_| protocol_error("content transfer acknowledgement encode failed"))?,
-            true,
-            self.timeout,
-        )
-        .await?;
-        match receive_message(&mut connection, self.timeout).await {
-            Err(error) if error.kind == DistributedErrorKind::TransportClosed => {}
-            Ok(_) => {
-                return Err(protocol_error(
-                    "content endpoint sent data after transfer completion",
-                ));
-            }
-            Err(error) => return Err(error),
-        }
-        Ok(())
-    }
-
-    pub fn content_path(&self, content_id: &mutsuki_runtime_contracts::ContentId) -> PathBuf {
-        self.destination.join(&content_id.digest)
-    }
-}
-
-impl ResourceLocalizer for LinkResourceLocalizer {
-    fn localize<'a>(
-        &'a self,
-        resources: &'a [mutsuki_distributed_contracts::DirectDataRef],
-    ) -> crate::WorkerFuture<'a, ()> {
-        Box::pin(async move {
-            for resource in resources {
-                self.localize_one(resource).await?;
-            }
-            Ok(())
-        })
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -698,6 +289,7 @@ pub struct WorkerProcess {
     secret: Arc<[u8]>,
     advertisement: WorkerAdvertisement,
     host: Arc<dyn HostAdapter>,
+    localizer: Arc<dyn ResourceLocalizer>,
     dispatcher: WorkerRequestDispatcher,
     timeout: Duration,
 }
@@ -723,7 +315,7 @@ impl WorkerProcess {
         let endpoint = Arc::new(crate::WorkerEndpoint::new(
             node_id.clone(),
             host.clone(),
-            localizer,
+            localizer.clone(),
         ));
         Ok(Self {
             node_id,
@@ -732,6 +324,7 @@ impl WorkerProcess {
             secret,
             advertisement,
             host,
+            localizer,
             dispatcher: WorkerRequestDispatcher::new(endpoint),
             timeout,
         })
@@ -808,15 +401,13 @@ impl WorkerProcess {
                     false,
                 ),
                 ClusterCommand::DrainWorker => (
-                    self.host
-                        .begin_drain()
+                    self.drain_localization()
                         .await
                         .map(|()| ClusterReplyBody::Draining),
                     false,
                 ),
                 ClusterCommand::StopWorker => (
-                    self.host
-                        .begin_drain()
+                    self.drain_localization()
                         .await
                         .map(|()| ClusterReplyBody::Stopping),
                     true,
@@ -835,6 +426,11 @@ impl WorkerProcess {
                 return Ok(true);
             }
         }
+    }
+
+    async fn drain_localization(&self) -> Result<(), DistributedError> {
+        self.localizer.shutdown().await?;
+        self.host.begin_drain().await
     }
 
     async fn worker_pulse(&self) -> Result<WorkerPulse, DistributedError> {
@@ -1283,7 +879,7 @@ impl ControllerClient {
     }
 }
 
-async fn authenticate_client(
+pub(crate) async fn authenticate_client(
     connection: &mut LocalConnection,
     local: &NodeId,
     remote: &NodeId,
@@ -1313,7 +909,7 @@ async fn authenticate_client(
     authenticated_binding(connection, local, remote, secret, &nonce, &welcome.nonce)
 }
 
-async fn authenticate_server(
+pub(crate) async fn authenticate_server(
     connection: &mut LocalConnection,
     local: &NodeId,
     remote: &NodeId,
@@ -1415,7 +1011,7 @@ fn authenticated_binding(
     crate::LinkSessionBinding::from_authenticated(authenticated)
 }
 
-async fn send_message(
+pub(crate) async fn send_message(
     connection: &mut LocalConnection,
     bytes: &[u8],
     control: bool,
@@ -1441,7 +1037,7 @@ async fn send_message(
     }
 }
 
-async fn receive_message(
+pub(crate) async fn receive_message(
     connection: &mut LocalConnection,
     timeout: Duration,
 ) -> Result<Vec<u8>, DistributedError> {
@@ -1468,61 +1064,18 @@ fn transport_budget() -> TransportBudget {
     }
 }
 
-fn data_transport_budget() -> TransportBudget {
+pub(crate) fn data_transport_budget() -> TransportBudget {
     TransportBudget {
-        max_frame_bytes: DATA_CHUNK_BYTES + 1024,
-        control_queue_capacity: 16,
-        data_queue_capacity: 16,
-        receive_queue_capacity: 16,
+        max_frame_bytes: crate::LOCALIZATION_CHUNK_BYTES + 1024,
+        control_queue_capacity: 4,
+        data_queue_capacity: 4,
+        receive_queue_capacity: 4,
         idle_timeout: None,
         ..TransportBudget::default()
     }
 }
 
-fn validate_content_file(source: &FileContentSource) -> Result<(), DistributedError> {
-    validate_sha256_content_id(&source.content_id)?;
-    let metadata = fs::metadata(&source.path).map_err(|_| content_io_error())?;
-    if !metadata.is_file() || metadata.len() != source.content_id.size {
-        return Err(invalid_process_config(
-            "direct content file size does not match its descriptor",
-        ));
-    }
-    let mut file = File::open(&source.path).map_err(|_| content_io_error())?;
-    let mut hash = Sha256::new();
-    let mut buffer = vec![0; DATA_CHUNK_BYTES];
-    loop {
-        let read = file.read(&mut buffer).map_err(|_| content_io_error())?;
-        if read == 0 {
-            break;
-        }
-        hash.update(&buffer[..read]);
-    }
-    if format!("{:x}", hash.finalize()) != source.content_id.digest {
-        return Err(invalid_process_config(
-            "direct content file digest does not match its descriptor",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_sha256_content_id(
-    content_id: &mutsuki_runtime_contracts::ContentId,
-) -> Result<(), DistributedError> {
-    if content_id.algorithm != "sha256"
-        || content_id.digest.len() != 64
-        || !content_id
-            .digest
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(invalid_process_config(
-            "direct content requires a canonical sha256 digest",
-        ));
-    }
-    Ok(())
-}
-
-fn endpoint_id(node: &NodeId) -> EndpointId {
+pub(crate) fn endpoint_id(node: &NodeId) -> EndpointId {
     let digest = Sha256::digest(node.0.as_bytes());
     EndpointId::from_bytes(digest[..16].try_into().expect("SHA prefix"))
 }
@@ -1582,7 +1135,7 @@ fn auth_proof(
     Ok(mac.finalize().into_bytes().into())
 }
 
-fn validate_secret(secret: &[u8]) -> Result<(), DistributedError> {
+pub(crate) fn validate_secret(secret: &[u8]) -> Result<(), DistributedError> {
     if secret.len() < 32 {
         return Err(invalid_process_config(
             "cluster secret must contain at least 32 bytes",
@@ -1634,16 +1187,13 @@ fn invalid_process_config(message: &'static str) -> DistributedError {
     DistributedError::new(DistributedErrorKind::InvalidConfig, message)
 }
 
-fn content_io_error() -> DistributedError {
-    DistributedError::new(
-        DistributedErrorKind::Storage,
-        "direct content storage operation failed",
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        FileContentServer, FileContentSource, LinkResourceLocalizer, LocalizationIoBudget,
+        LocalizationIoRuntime,
+    };
     use mutsuki_distributed_contracts::{
         DirectDataRef, LocalTaskOutcome, LocalTaskSnapshot, RunnerGeneration,
     };
@@ -1655,6 +1205,8 @@ mod tests {
         TaskPortabilityDescriptor,
     };
     use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
     use std::process::{Command, Stdio};
     use std::sync::Mutex;
 
@@ -1780,6 +1332,52 @@ mod tests {
         }
     }
 
+    fn test_localization_io(max_content_bytes: u64) -> LocalizationIoRuntime {
+        LocalizationIoRuntime::new(LocalizationIoBudget {
+            max_active_reads: 4,
+            max_active_writes: 4,
+            max_active_hash_jobs: 4,
+            max_queued_jobs: 32,
+            max_buffered_bytes: 4 * 1024 * 1024,
+            max_content_bytes,
+        })
+        .expect("test localization I/O budget")
+    }
+
+    async fn start_content_transfer(
+        origin: &NodeId,
+        worker: &NodeId,
+        address: String,
+        secret: Arc<[u8]>,
+        source_path: &std::path::Path,
+        content_id: &ContentId,
+        io: LocalizationIoRuntime,
+    ) -> (
+        tokio::task::JoinHandle<Result<(), DistributedError>>,
+        DirectDataRef,
+    ) {
+        let server = FileContentServer::open(
+            origin.clone(),
+            worker.clone(),
+            address.clone(),
+            secret,
+            vec![FileContentSource {
+                content_id: content_id.clone(),
+                path: source_path.to_owned(),
+            }],
+            Duration::from_secs(5),
+            io.clone(),
+        )
+        .await
+        .expect("content server");
+        let resource = DirectDataRef {
+            owner_node: origin.clone(),
+            content_id: content_id.clone(),
+            endpoint_hint: format!("link-local://{address}"),
+        };
+        (tokio::spawn(server.serve_once()), resource)
+    }
+
     #[test]
     fn process_worker_child() {
         let Ok(address) = std::env::var("MUTSUKI_TEST_WORKER_ADDRESS") else {
@@ -1790,7 +1388,16 @@ mod tests {
             std::env::var("MUTSUKI_TEST_CONTENT_DESTINATION").expect("child content destination");
         let runtime = tokio::runtime::Runtime::new().expect("child runtime");
         runtime
-            .block_on(
+            .block_on(async {
+                let localizer = LinkResourceLocalizer::open(
+                    NodeId("worker-process".into()),
+                    Arc::from(secret.clone().into_bytes()),
+                    destination,
+                    Duration::from_secs(2),
+                    test_localization_io(16 * 1024 * 1024),
+                )
+                .await
+                .expect("child resource localizer");
                 WorkerProcess::new(
                     NodeId("worker-process".into()),
                     NodeId("controller-process".into()),
@@ -1798,21 +1405,13 @@ mod tests {
                     Arc::from(secret.clone().into_bytes()),
                     test_advertisement(),
                     Arc::new(ProcessFakeHost::default()),
-                    Arc::new(
-                        LinkResourceLocalizer::new(
-                            NodeId("worker-process".into()),
-                            Arc::from(secret.clone().into_bytes()),
-                            destination,
-                            16 * 1024 * 1024,
-                            Duration::from_secs(2),
-                        )
-                        .expect("child resource localizer"),
-                    ),
+                    Arc::new(localizer),
                     Duration::from_secs(2),
                 )
                 .expect("child Worker config")
-                .run(),
-            )
+                .run()
+                .await
+            })
             .expect("child Worker run");
     }
 
@@ -1831,7 +1430,7 @@ mod tests {
         let size = fs::metadata(&path).expect("content metadata").len();
         let runtime = tokio::runtime::Runtime::new().expect("content runtime");
         runtime.block_on(async {
-            let server = FileContentServer::new(
+            let server = FileContentServer::open(
                 NodeId("content-origin".into()),
                 NodeId("worker-process".into()),
                 address,
@@ -1841,7 +1440,9 @@ mod tests {
                     path,
                 }],
                 Duration::from_secs(2),
+                test_localization_io(size),
             )
+            .await
             .expect("content server config");
             let (server, listener) = server.bind().expect("bind content server");
             fs::write(ready_path, b"ready").expect("publish content readiness");
@@ -1859,6 +1460,15 @@ mod tests {
         let secret: Arc<[u8]> =
             Arc::from(format!("delayed-worker-secret-at-least-thirty-two-{unique}").into_bytes());
         let destination = tempfile::tempdir().expect("delayed Worker destination");
+        let localizer = LinkResourceLocalizer::open(
+            NodeId("worker-process".into()),
+            secret.clone(),
+            destination.path(),
+            Duration::from_secs(2),
+            test_localization_io(16 * 1024 * 1024),
+        )
+        .await
+        .unwrap();
         let worker = WorkerProcess::new(
             NodeId("worker-process".into()),
             NodeId("controller-process".into()),
@@ -1866,16 +1476,7 @@ mod tests {
             secret.clone(),
             test_advertisement(),
             Arc::new(ProcessFakeHost::default()),
-            Arc::new(
-                LinkResourceLocalizer::new(
-                    NodeId("worker-process".into()),
-                    secret.clone(),
-                    destination.path(),
-                    16 * 1024 * 1024,
-                    Duration::from_secs(2),
-                )
-                .unwrap(),
-            ),
+            Arc::new(localizer),
             Duration::from_secs(2),
         )
         .unwrap();
@@ -1924,37 +1525,27 @@ mod tests {
             u64::try_from(bytes.len()).expect("content length"),
             "blob",
         );
-        let localizer = LinkResourceLocalizer::new(
+        let io = test_localization_io(2 * 1024 * 1024);
+        let localizer = LinkResourceLocalizer::open(
             worker.clone(),
             secret.clone(),
             destination.path(),
-            2 * 1024 * 1024,
             Duration::from_secs(5),
+            io.clone(),
         )
+        .await
         .expect("content localizer");
 
-        let run_transfer = |address: String| {
-            let server = FileContentServer::new(
-                origin.clone(),
-                worker.clone(),
-                address.clone(),
-                secret.clone(),
-                vec![FileContentSource {
-                    content_id: content_id.clone(),
-                    path: source_path.clone(),
-                }],
-                Duration::from_secs(5),
-            )
-            .expect("content server");
-            let resource = DirectDataRef {
-                owner_node: origin.clone(),
-                content_id: content_id.clone(),
-                endpoint_hint: format!("link-local://{address}"),
-            };
-            (tokio::spawn(server.serve_once()), resource)
-        };
-
-        let (server, resource) = run_transfer(format!("content-miss-{unique}"));
+        let (server, resource) = start_content_transfer(
+            &origin,
+            &worker,
+            format!("content-miss-{unique}"),
+            secret.clone(),
+            &source_path,
+            &content_id,
+            io.clone(),
+        )
+        .await;
         localizer
             .localize(std::slice::from_ref(&resource))
             .await
@@ -1969,33 +1560,27 @@ mod tests {
         );
 
         let deduplicated_destination = tempfile::tempdir().expect("deduplicated destination");
-        let deduplicated = LinkResourceLocalizer::new(
+        let deduplicated_io = test_localization_io(2 * 1024 * 1024);
+        let deduplicated = LinkResourceLocalizer::open(
             worker.clone(),
             secret.clone(),
             deduplicated_destination.path(),
-            2 * 1024 * 1024,
             Duration::from_secs(5),
+            deduplicated_io.clone(),
         )
+        .await
         .expect("deduplicating localizer");
         let address = format!("content-deduplicate-{unique}");
-        let server = FileContentServer::new(
-            origin.clone(),
-            worker.clone(),
-            address.clone(),
+        let (server, resource) = start_content_transfer(
+            &origin,
+            &worker,
+            address,
             secret.clone(),
-            vec![FileContentSource {
-                content_id: content_id.clone(),
-                path: source_path.clone(),
-            }],
-            Duration::from_secs(5),
+            &source_path,
+            &content_id,
+            deduplicated_io,
         )
-        .expect("deduplicated content server");
-        let resource = DirectDataRef {
-            owner_node: origin.clone(),
-            content_id: content_id.clone(),
-            endpoint_hint: format!("link-local://{address}"),
-        };
-        let server = tokio::spawn(server.serve_once());
+        .await;
         let (first, second) = tokio::join!(
             deduplicated.localize(std::slice::from_ref(&resource)),
             deduplicated.localize(std::slice::from_ref(&resource))
@@ -2010,6 +1595,11 @@ mod tests {
             fs::read(deduplicated.content_path(&content_id)).expect("deduplicated content"),
             bytes
         );
+        let deduplicated_metrics = deduplicated.io_metrics();
+        assert_eq!(deduplicated_metrics.physical_downloads, 1);
+        assert_eq!(deduplicated_metrics.physical_source_reads, 1);
+        assert_eq!(deduplicated_metrics.physical_validation_reads, 1);
+        assert!(deduplicated_metrics.peak_buffered_bytes <= 4 * 1024 * 1024);
 
         let offline_resource = DirectDataRef {
             endpoint_hint: "link-local://offline-cache-hit".into(),
@@ -2026,7 +1616,16 @@ mod tests {
             .with_extension("partial");
         let resume_offset = bytes.len() / 2;
         fs::write(&partial, &bytes[..resume_offset]).expect("seed partial content");
-        let (server, resource) = run_transfer(format!("content-resume-{unique}"));
+        let (server, resource) = start_content_transfer(
+            &origin,
+            &worker,
+            format!("content-resume-{unique}"),
+            secret.clone(),
+            &source_path,
+            &content_id,
+            io.clone(),
+        )
+        .await;
         localizer
             .localize(std::slice::from_ref(&resource))
             .await
@@ -2040,6 +1639,58 @@ mod tests {
             bytes
         );
         assert!(!partial.exists());
+
+        fs::remove_file(localizer.content_path(&content_id)).expect("remove resumed content");
+        let resume_offset = bytes.len() * 9 / 10;
+        fs::write(&partial, &bytes[..resume_offset]).expect("seed ninety-percent partial");
+        let (server, resource) = start_content_transfer(
+            &origin,
+            &worker,
+            format!("content-resume-ninety-{unique}"),
+            secret.clone(),
+            &source_path,
+            &content_id,
+            io.clone(),
+        )
+        .await;
+        localizer
+            .localize(std::slice::from_ref(&resource))
+            .await
+            .expect("ninety-percent resumed content localization");
+        server
+            .await
+            .expect("ninety-percent resume server task")
+            .expect("ninety-percent resume server transfer");
+        assert_eq!(
+            fs::read(localizer.content_path(&content_id)).expect("ninety-percent resumed content"),
+            bytes
+        );
+
+        fs::remove_file(localizer.content_path(&content_id)).expect("remove resumed content");
+        fs::write(&partial, vec![0_u8; bytes.len() + 1]).expect("seed overlong partial");
+        let (server, resource) = start_content_transfer(
+            &origin,
+            &worker,
+            format!("content-overlong-{unique}"),
+            secret,
+            &source_path,
+            &content_id,
+            io,
+        )
+        .await;
+        localizer
+            .localize(std::slice::from_ref(&resource))
+            .await
+            .expect("overlong partial restarts from zero");
+        server
+            .await
+            .expect("overlong partial server task")
+            .expect("overlong partial server transfer");
+        assert_eq!(
+            fs::read(localizer.content_path(&content_id)).expect("content after overlong partial"),
+            bytes
+        );
+        assert!(!partial.exists());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2049,6 +1700,15 @@ mod tests {
         let secret: Arc<[u8]> =
             Arc::from(format!("large-payload-secret-at-least-thirty-two-{unique}").into_bytes());
         let destination = tempfile::tempdir().expect("large payload destination");
+        let localizer = LinkResourceLocalizer::open(
+            NodeId("worker-process".into()),
+            secret.clone(),
+            destination.path(),
+            Duration::from_secs(2),
+            test_localization_io(16 * 1024 * 1024),
+        )
+        .await
+        .unwrap();
         let worker = WorkerProcess::new(
             NodeId("worker-process".into()),
             NodeId("controller-process".into()),
@@ -2056,16 +1716,7 @@ mod tests {
             secret.clone(),
             test_advertisement(),
             Arc::new(ProcessFakeHost::default()),
-            Arc::new(
-                LinkResourceLocalizer::new(
-                    NodeId("worker-process".into()),
-                    secret.clone(),
-                    destination.path(),
-                    16 * 1024 * 1024,
-                    Duration::from_secs(2),
-                )
-                .unwrap(),
-            ),
+            Arc::new(localizer),
             Duration::from_secs(2),
         )
         .unwrap();

@@ -33,8 +33,10 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod content_localization;
 mod content_store;
 mod ha_control;
+mod localization_io;
 mod persistent_registry;
 mod process;
 mod recovery;
@@ -43,8 +45,10 @@ mod scheduler;
 mod trust_audit;
 mod trust_plane;
 mod trust_reputation;
+pub use content_localization::*;
 pub use content_store::*;
 pub use ha_control::*;
+pub use localization_io::*;
 pub use persistent_registry::*;
 pub use process::*;
 pub use recovery::*;
@@ -292,6 +296,10 @@ pub trait RemoteWorker: Send + Sync {
 
 pub trait ResourceLocalizer: Send + Sync {
     fn localize<'a>(&'a self, resources: &'a [DirectDataRef]) -> WorkerFuture<'a, ()>;
+
+    fn shutdown(&self) -> WorkerFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// A bounded request/reply carrier. Production implementations bind this to

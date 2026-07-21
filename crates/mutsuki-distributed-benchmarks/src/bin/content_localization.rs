@@ -1,6 +1,7 @@
 use mutsuki_distributed_contracts::{DirectDataRef, NodeId};
 use mutsuki_distributed_runtime::{
-    FileContentServer, FileContentSource, LinkResourceLocalizer, ResourceLocalizer,
+    FileContentServer, FileContentSource, LinkResourceLocalizer, LocalizationIoBudget,
+    LocalizationIoMetricsSnapshot, LocalizationIoRuntime, ResourceLocalizer,
 };
 use mutsuki_runtime_contracts::ContentId;
 use serde::Serialize;
@@ -10,6 +11,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use tokio::task::JoinSet;
@@ -28,6 +30,8 @@ struct RawReport {
     samples: usize,
     warmup_samples: usize,
     lane: String,
+    resume_percent: u64,
+    coalesced: bool,
     cases: Vec<RawCase>,
     correctness: Correctness,
 }
@@ -41,6 +45,18 @@ struct RawCase {
     disk_read_bytes_per_sample: u64,
     disk_write_bytes_per_sample: u64,
     duplicate_bytes_avoided_per_sample: u64,
+    evidence: Vec<SampleEvidence>,
+}
+
+#[derive(Serialize)]
+struct SampleEvidence {
+    elapsed_ns: u128,
+    reactor_heartbeat_p50_ns: u64,
+    reactor_heartbeat_p95_ns: u64,
+    reactor_heartbeat_p99_ns: u64,
+    reactor_heartbeat_max_ns: u64,
+    origin_io: Option<LocalizationIoMetricsSnapshot>,
+    worker_io: LocalizationIoMetricsSnapshot,
 }
 
 #[derive(Serialize)]
@@ -56,6 +72,13 @@ enum TransferKind {
     Resume,
 }
 
+#[derive(Clone, Copy)]
+struct SampleMode {
+    concurrency: usize,
+    resume_percent: u64,
+    coalesced: bool,
+}
+
 #[tokio::main(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)]
 async fn main() {
@@ -63,6 +86,9 @@ async fn main() {
     let samples = env_usize("MUTSUKI_CONTENT_SAMPLES", 5);
     let warmup_samples = env_usize("MUTSUKI_CONTENT_WARMUP_SAMPLES", 0);
     let lane = env::var("MUTSUKI_CONTENT_LANE").unwrap_or_else(|_| "per-transfer".into());
+    let resume_percent = env_u64("MUTSUKI_CONTENT_RESUME_PERCENT", 50);
+    let coalesced = env_bool("MUTSUKI_CONTENT_COALESCED", false);
+    assert!(resume_percent <= 100, "resume percent must not exceed 100");
     let content_bytes = match env::var("MUTSUKI_CONTENT_AGGREGATE_BYTES") {
         Ok(value) => {
             let aggregate = value
@@ -83,6 +109,11 @@ async fn main() {
         "MUTSUKI_CONTENT_CONCURRENCY must be positive"
     );
     assert!(samples > 0, "MUTSUKI_CONTENT_SAMPLES must be positive");
+    let mode = SampleMode {
+        concurrency,
+        resume_percent,
+        coalesced,
+    };
 
     let output = env::var_os("MUTSUKI_BENCH_OUTPUT").map_or_else(
         || PathBuf::from("target/mutsuki-benchmarks/content-localization.raw.json"),
@@ -104,9 +135,9 @@ async fn main() {
             sample,
             &source_path,
             &content_id,
-            concurrency,
             content_bytes,
             secret.clone(),
+            mode,
         )
         .await;
     }
@@ -116,9 +147,9 @@ async fn main() {
             sample,
             &source_path,
             &content_id,
-            concurrency,
             content_bytes,
             secret.clone(),
+            mode,
         )
         .await;
         miss.push(timings.0);
@@ -130,40 +161,48 @@ async fn main() {
     let full_bytes = content_bytes
         .checked_mul(concurrency_u64)
         .expect("benchmark byte count");
-    let resume_bytes = (content_bytes - content_bytes / 2)
-        .checked_mul(concurrency_u64)
+    let resume_offset = content_bytes.saturating_mul(resume_percent) / 100;
+    let physical_transfers = if coalesced { 1 } else { concurrency_u64 };
+    let physical_full_bytes = content_bytes
+        .checked_mul(physical_transfers)
+        .expect("physical benchmark byte count");
+    let resume_bytes = (content_bytes - resume_offset)
+        .checked_mul(physical_transfers)
         .expect("resume byte count");
     let cases = vec![
         RawCase {
             name: "content.localization.miss",
-            elapsed_ns: miss,
+            elapsed_ns: miss.iter().map(|sample| sample.elapsed_ns).collect(),
             operations: concurrency,
-            ipc_bytes_per_sample: full_bytes,
-            disk_read_bytes_per_sample: full_bytes,
-            disk_write_bytes_per_sample: full_bytes,
-            duplicate_bytes_avoided_per_sample: 0,
+            ipc_bytes_per_sample: physical_full_bytes,
+            disk_read_bytes_per_sample: physical_full_bytes,
+            disk_write_bytes_per_sample: physical_full_bytes,
+            duplicate_bytes_avoided_per_sample: full_bytes - physical_full_bytes,
+            evidence: miss,
         },
         RawCase {
             name: "content.localization.verified_hit",
-            elapsed_ns: hit,
+            elapsed_ns: hit.iter().map(|sample| sample.elapsed_ns).collect(),
             operations: concurrency,
             ipc_bytes_per_sample: 0,
-            disk_read_bytes_per_sample: full_bytes,
+            disk_read_bytes_per_sample: physical_full_bytes,
             disk_write_bytes_per_sample: 0,
-            duplicate_bytes_avoided_per_sample: full_bytes,
+            duplicate_bytes_avoided_per_sample: physical_full_bytes,
+            evidence: hit,
         },
         RawCase {
             name: "content.localization.resume_half",
-            elapsed_ns: resume,
+            elapsed_ns: resume.iter().map(|sample| sample.elapsed_ns).collect(),
             operations: concurrency,
             ipc_bytes_per_sample: resume_bytes,
-            disk_read_bytes_per_sample: full_bytes,
+            disk_read_bytes_per_sample: physical_full_bytes,
             disk_write_bytes_per_sample: resume_bytes,
-            duplicate_bytes_avoided_per_sample: full_bytes - resume_bytes,
+            duplicate_bytes_avoided_per_sample: physical_full_bytes - resume_bytes,
+            evidence: resume,
         },
     ];
     let report = RawReport {
-        schema_version: "mutsuki.distributed.content-localization.raw.v1",
+        schema_version: "mutsuki.distributed.content-localization.raw.v2",
         benchmark: "content-localization",
         boundary: "authenticated-link-local-ipc-and-real-filesystem",
         content_bytes,
@@ -173,6 +212,8 @@ async fn main() {
         samples,
         warmup_samples,
         lane,
+        resume_percent,
+        coalesced,
         cases,
         correctness: Correctness {
             digest_mismatches: 0,
@@ -192,15 +233,16 @@ async fn run_sample(
     sample: usize,
     source_path: &Path,
     content_id: &ContentId,
-    concurrency: usize,
     content_bytes: u64,
     secret: Arc<[u8]>,
-) -> (u128, u128, u128) {
+    mode: SampleMode,
+) -> (SampleEvidence, SampleEvidence, SampleEvidence) {
+    let destination_count = if mode.coalesced { 1 } else { mode.concurrency };
     let destinations = destinations(
         source_path.parent().expect("content benchmark root"),
         "sample",
         sample,
-        concurrency,
+        destination_count,
     );
     let miss = transfer_group(
         TransferKind::Miss,
@@ -209,19 +251,23 @@ async fn run_sample(
         content_id,
         &destinations,
         secret.clone(),
+        mode,
     )
     .await;
 
+    let heartbeat = Heartbeat::start();
     let hit_started = Instant::now();
     let mut hit_tasks = JoinSet::new();
+    let hit_io = localization_io(content_bytes);
     for (index, destination) in destinations.iter().enumerate() {
-        let localizer = LinkResourceLocalizer::new(
+        let localizer = LinkResourceLocalizer::open(
             NodeId(format!("content-worker-{sample}-{index}")),
             secret.clone(),
             destination,
-            content_bytes,
             Duration::from_secs(120),
+            hit_io.clone(),
         )
+        .await
         .expect("cache-hit localizer");
         let resource = DirectDataRef {
             owner_node: NodeId(format!("offline-origin-{sample}-{index}")),
@@ -238,9 +284,11 @@ async fn run_sample(
     while let Some(result) = hit_tasks.join_next().await {
         result.expect("cache-hit task");
     }
-    let hit = hit_started.elapsed().as_nanos();
+    let hit_elapsed = hit_started.elapsed().as_nanos();
+    let hit_heartbeat = heartbeat.stop().await;
+    let hit = sample_evidence(hit_elapsed, hit_heartbeat, None, hit_io.metrics());
 
-    let resume_offset = content_bytes / 2;
+    let resume_offset = content_bytes.saturating_mul(mode.resume_percent) / 100;
     for destination in &destinations {
         let final_path = destination.join(&content_id.digest);
         fs::remove_file(final_path).expect("remove cold localization result");
@@ -257,6 +305,7 @@ async fn run_sample(
         content_id,
         &destinations,
         secret,
+        mode,
     )
     .await;
     for destination in destinations {
@@ -276,7 +325,10 @@ async fn transfer_group(
     content_id: &ContentId,
     destinations: &[PathBuf],
     secret: Arc<[u8]>,
-) -> u128 {
+    mode: SampleMode,
+) -> SampleEvidence {
+    let origin_io = localization_io(content_id.size);
+    let worker_io = localization_io(content_id.size);
     let mut transfers = Vec::with_capacity(destinations.len());
     for (index, destination) in destinations.iter().enumerate() {
         let suffix = match kind {
@@ -286,7 +338,7 @@ async fn transfer_group(
         let origin = NodeId(format!("content-origin-{sample}-{index}"));
         let worker = NodeId(format!("content-worker-{sample}-{index}"));
         let address = format!("content-{suffix}-{sample}-{index}-{}", unique());
-        let server = FileContentServer::new(
+        let server = FileContentServer::open(
             origin.clone(),
             worker.clone(),
             address.clone(),
@@ -296,15 +348,18 @@ async fn transfer_group(
                 path: source_path.to_owned(),
             }],
             Duration::from_secs(120),
+            origin_io.clone(),
         )
+        .await
         .expect("content benchmark server");
-        let localizer = LinkResourceLocalizer::new(
+        let localizer = LinkResourceLocalizer::open(
             worker,
             secret.clone(),
             destination,
-            content_id.size,
             Duration::from_secs(120),
+            worker_io.clone(),
         )
+        .await
         .expect("content benchmark localizer");
         let resource = DirectDataRef {
             owner_node: origin,
@@ -313,15 +368,34 @@ async fn transfer_group(
         };
         transfers.push((server, localizer, resource));
     }
+    let heartbeat = Heartbeat::start();
     let started = Instant::now();
     let mut tasks = JoinSet::new();
     for (server, localizer, resource) in transfers {
         tasks.spawn(async move {
             let server_task = tokio::spawn(server.serve_once());
-            localizer
-                .localize(std::slice::from_ref(&resource))
-                .await
-                .expect("content localization");
+            if mode.coalesced {
+                let localizer = Arc::new(localizer);
+                let mut followers = JoinSet::new();
+                for _ in 0..mode.concurrency {
+                    let follower = localizer.clone();
+                    let resource = resource.clone();
+                    followers.spawn(async move {
+                        follower
+                            .localize(std::slice::from_ref(&resource))
+                            .await
+                            .expect("coalesced content localization");
+                    });
+                }
+                while let Some(result) = followers.join_next().await {
+                    result.expect("coalesced localization follower");
+                }
+            } else {
+                localizer
+                    .localize(std::slice::from_ref(&resource))
+                    .await
+                    .expect("content localization");
+            }
             server_task
                 .await
                 .expect("content server task")
@@ -331,7 +405,100 @@ async fn transfer_group(
     while let Some(result) = tasks.join_next().await {
         result.expect("content transfer task");
     }
-    started.elapsed().as_nanos()
+    let elapsed = started.elapsed().as_nanos();
+    let heartbeat = heartbeat.stop().await;
+    sample_evidence(
+        elapsed,
+        heartbeat,
+        Some(origin_io.metrics()),
+        worker_io.metrics(),
+    )
+}
+
+fn localization_io(max_content_bytes: u64) -> LocalizationIoRuntime {
+    let active_jobs = env_usize("MUTSUKI_CONTENT_ACTIVE_JOBS", 4);
+    let io = LocalizationIoRuntime::new(LocalizationIoBudget {
+        max_active_reads: active_jobs,
+        max_active_writes: active_jobs,
+        max_active_hash_jobs: active_jobs,
+        max_queued_jobs: 64,
+        max_buffered_bytes: 192 * 1024 * 1024,
+        max_content_bytes,
+    })
+    .expect("content benchmark I/O budget");
+    let read_delay = Duration::from_millis(env_u64("MUTSUKI_CONTENT_READ_DELAY_MS", 0));
+    let write_delay = Duration::from_millis(env_u64("MUTSUKI_CONTENT_WRITE_DELAY_MS", 0));
+    let hash_delay = Duration::from_millis(env_u64("MUTSUKI_CONTENT_HASH_DELAY_MS", 0));
+    io.testkit()
+        .set_stage_delays(read_delay, write_delay, hash_delay);
+    io.testkit()
+        .set_network_delay(Duration::from_millis(env_u64(
+            "MUTSUKI_CONTENT_NETWORK_DELAY_MS",
+            0,
+        )));
+    io
+}
+
+struct Heartbeat {
+    stop: Arc<AtomicBool>,
+    task: tokio::task::JoinHandle<Vec<u64>>,
+}
+
+impl Heartbeat {
+    fn start() -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let task_stop = stop.clone();
+        let task = tokio::spawn(async move {
+            let period = Duration::from_millis(1);
+            let mut deadline = tokio::time::Instant::now() + period;
+            let mut delays = Vec::new();
+            while !task_stop.load(Ordering::Acquire) {
+                tokio::time::sleep_until(deadline).await;
+                let now = tokio::time::Instant::now();
+                delays.push(duration_ns(
+                    now.saturating_duration_since(deadline).as_nanos(),
+                ));
+                deadline += period;
+            }
+            delays
+        });
+        Self { stop, task }
+    }
+
+    async fn stop(self) -> Vec<u64> {
+        self.stop.store(true, Ordering::Release);
+        self.task.await.expect("reactor heartbeat task")
+    }
+}
+
+fn sample_evidence(
+    elapsed_ns: u128,
+    mut heartbeat: Vec<u64>,
+    origin_io: Option<LocalizationIoMetricsSnapshot>,
+    worker_io: LocalizationIoMetricsSnapshot,
+) -> SampleEvidence {
+    heartbeat.sort_unstable();
+    SampleEvidence {
+        elapsed_ns,
+        reactor_heartbeat_p50_ns: percentile(&heartbeat, 50),
+        reactor_heartbeat_p95_ns: percentile(&heartbeat, 95),
+        reactor_heartbeat_p99_ns: percentile(&heartbeat, 99),
+        reactor_heartbeat_max_ns: heartbeat.last().copied().unwrap_or(0),
+        origin_io,
+        worker_io,
+    }
+}
+
+fn percentile(values: &[u64], percentile: usize) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let index = (values.len() - 1).saturating_mul(percentile) / 100;
+    values[index]
+}
+
+fn duration_ns(value: u128) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn write_source(path: &Path, content_bytes: u64) -> ContentId {
@@ -386,6 +553,13 @@ fn env_u64(name: &str, default: u64) -> u64 {
 }
 
 fn env_usize(name: &str, default: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
     env::var(name)
         .ok()
         .and_then(|value| value.parse().ok())

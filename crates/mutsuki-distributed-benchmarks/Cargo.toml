@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 mutsuki-distributed-contracts.workspace = true
-mutsuki-distributed-runtime.workspace = true
+mutsuki-distributed-runtime = { workspace = true, features = ["localization-testkit"] }
 mutsuki-runtime-contracts.workspace = true
 serde.workspace = true
 serde_json.workspace = true

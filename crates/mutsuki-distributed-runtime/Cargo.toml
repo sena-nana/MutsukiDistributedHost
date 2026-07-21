@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+localization-testkit = []
+
 [dependencies]
 mutsuki-distributed-contracts.workspace = true
 mutsuki-distributed-host-adapter.workspace = true

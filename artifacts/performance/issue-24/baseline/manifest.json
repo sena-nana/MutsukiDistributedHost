@@ -1,0 +1,23 @@
+{
+  "schema_version": "mutsuki.distributed.issue24.baseline.v1",
+  "revision": "04d1fe2f432555b2c93dd241612fd2f1978fd17a",
+  "captured_before_implementation": true,
+  "host": {
+    "machine": "zt-admindeMac-mini.local",
+    "os": "macOS 26.5.2 (25F84)",
+    "architecture": "arm64",
+    "rustc": "1.97.0 (2d8144b78 2026-07-07)"
+  },
+  "protocol": {
+    "process_runs": 3,
+    "warmups_per_run": 1,
+    "samples_per_run": 5,
+    "concurrency": 1
+  },
+  "normal_miss_median": {
+    "1048576": { "elapsed_ns": 33486542, "bytes_per_second": 31313355.676 },
+    "67108864": { "elapsed_ns": 181329209, "bytes_per_second": 370094064.658 },
+    "536870912": { "elapsed_ns": 1247031875, "bytes_per_second": 430518996.958 }
+  },
+  "command": "MUTSUKI_CONTENT_BYTES=<bytes> MUTSUKI_CONTENT_CONCURRENCY=1 MUTSUKI_CONTENT_SAMPLES=5 MUTSUKI_CONTENT_WARMUP_SAMPLES=1 cargo run --release --locked -p mutsuki-distributed-benchmarks --bin content_localization"
+}

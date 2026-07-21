@@ -3,7 +3,8 @@ use mutsuki_distributed_contracts::{
 };
 use mutsuki_distributed_host_adapter::ServiceHostAdapter;
 use mutsuki_distributed_runtime::{
-    ControllerProcess, LinkResourceLocalizer, Sidecar, WorkerConnectionConfig, WorkerProcess,
+    ControllerProcess, LinkResourceLocalizer, LocalizationIoBudget, LocalizationIoRuntime, Sidecar,
+    WorkerConnectionConfig, WorkerProcess,
 };
 use serde::Deserialize;
 use std::path::Path;
@@ -37,8 +38,7 @@ enum ClusterDeployment {
         service_endpoint: String,
         service_token_env: String,
         content_directory: String,
-        #[serde(default = "default_max_content_bytes")]
-        max_content_bytes: u64,
+        localization_io: LocalizationIoBudget,
         advertisement: WorkerAdvertisement,
         #[serde(default = "default_request_timeout_ms")]
         request_timeout_ms: u64,
@@ -138,7 +138,7 @@ async fn run_clustered(path: &str) -> Result<(), DistributedError> {
             service_endpoint,
             service_token_env,
             content_directory,
-            max_content_bytes,
+            localization_io,
             advertisement,
             request_timeout_ms,
         } => {
@@ -146,13 +146,17 @@ async fn run_clustered(path: &str) -> Result<(), DistributedError> {
             let token = required_env(&service_token_env)?;
             let host = Arc::new(ServiceHostAdapter::local_socket(service_endpoint, token));
             let node_id = NodeId(node_id);
-            let localizer = Arc::new(LinkResourceLocalizer::new(
-                node_id.clone(),
-                secret.clone(),
-                content_directory,
-                max_content_bytes,
-                Duration::from_millis(request_timeout_ms),
-            )?);
+            let localization_io = LocalizationIoRuntime::new(localization_io)?;
+            let localizer = Arc::new(
+                LinkResourceLocalizer::open(
+                    node_id.clone(),
+                    secret.clone(),
+                    content_directory,
+                    Duration::from_millis(request_timeout_ms),
+                    localization_io,
+                )
+                .await?,
+            );
             WorkerProcess::new(
                 node_id,
                 NodeId(controller_node),
@@ -214,10 +218,6 @@ const fn default_max_tasks() -> usize {
 
 const fn default_request_timeout_ms() -> u64 {
     5_000
-}
-
-const fn default_max_content_bytes() -> u64 {
-    64 * 1024 * 1024 * 1024
 }
 
 const fn default_pulse_interval_ms() -> u64 {

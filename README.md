@@ -49,13 +49,35 @@ mutsuki-distributed-host clustered /absolute/path/to/deployment.json
 deployment 的 `role` 只能是 `controller`、`worker` 或 `high_availability`。Controller 配置
 声明 Worker 的 node/address、管理 client node、本地 ServiceHost endpoint，以及 secret/token
 环境变量名；Worker 配置另声明 capability advertisement 与 content directory。配置文件不保存
-secret。`high_availability` 在真实多进程 CFT backend 完成前始终结构化拒绝。
+secret。Worker 还必须显式声明节点级 `localization_io` 预算；旧的顶层
+`max_content_bytes` 不再接受：
+
+```json
+{
+  "content_directory": "/var/lib/mutsuki/content",
+  "localization_io": {
+    "max_active_reads": 4,
+    "max_active_writes": 4,
+    "max_active_hash_jobs": 4,
+    "max_queued_jobs": 64,
+    "max_buffered_bytes": 16777216,
+    "max_content_bytes": 68719476736
+  }
+}
+```
+
+所有字段都必须为正数，`max_buffered_bytes` 至少为 256 KiB。无效预算返回
+`InvalidConfig`；等待队列或内容上限耗尽返回 `CapacityExceeded`。预算在同一 Worker
+的校验、续传 rehash、读写、下载缓冲和关闭流程间共享。`high_availability` 在真实多进程
+CFT backend 完成前始终结构化拒绝。
 
 当前可部署 transport 是 MutsukiLink local IPC：连接执行 HMAC 双向身份校验、OS peer credential
 校验和分布式 protocol negotiation。Controller control frame 保持 64 KiB 上限；大内容由 origin
 进程的 `FileContentServer` 直接流向 Worker 的 `LinkResourceLocalizer`，按 256 KiB 分块并在原子
-发布前验证 size 和 SHA-256。断线会关闭 session，后续调用重新认证连接；安全重试由 Attempt
-fencing 决定，不能安全重试的任务结构化失败。
+发布前验证 size 和 SHA-256。文件打开、metadata、目录创建、SHA-256、顺序读写、fsync 和
+rename 都在有界 blocking job 中执行；慢网络通过全局字节预算和有界 channel 反压读端。同一
+完整 ContentId 的并发请求共用一次下载和校验。断线会关闭 session，后续调用重新认证连接；
+安全重试由 Attempt fencing 决定，不能安全重试的任务结构化失败。
 
 `mutsuki-distributed-control-client` 是产品启动门控使用的瘦客户端。它通过同一认证管理端点读取
 `SidecarCapabilityProof` 和 health，不链接 scheduler/recovery 实现。证明固定包含 capability schema、
@@ -125,6 +147,11 @@ checkpoint、trust 的逐项 maturity。产品必须同时校验 release/revisio
 [docs/acceptance/issue-12.md](docs/acceptance/issue-12.md)。
 
 ## Performance model
+
+Issue #24 的 localization reactor isolation、backpressure、资源预算和续传 rehash 证据保存在
+`artifacts/performance/issue-24/`，验收记录见
+[`docs/acceptance/issue-24.md`](docs/acceptance/issue-24.md)。故障与流量整形仅由
+`localization-testkit` Cargo feature 暴露给测试/基准，不属于 production deployment 配置。
 
 Issue #22 的多进程派发、placement、持久 registry、1 MiB/64 MiB/1 GiB content localization
 与故障恢复基准由本仓库的 `mutsuki-distributed-benchmarks` 和
