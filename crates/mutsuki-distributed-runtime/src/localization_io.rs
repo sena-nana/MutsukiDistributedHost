@@ -88,14 +88,6 @@ impl BlockingRequirements {
     };
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BlockingOutcome {
-    Completed,
-    Failed,
-    Cancelled,
-    Panicked,
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct LocalizationLatencyHistogram {
     pub buckets: Vec<u64>,
@@ -314,7 +306,7 @@ impl LocalizationIoRuntime {
         self.inner.budget
     }
 
-    pub fn is_shutdown(&self) -> bool {
+    pub(crate) fn is_shutdown(&self) -> bool {
         self.inner.shutdown.load(Ordering::Acquire)
     }
 
@@ -479,22 +471,30 @@ impl LocalizationIoRuntime {
                 work()
             }));
             let execution_ns = duration_ns(started.elapsed().as_nanos());
-            let (outcome, result) = match result {
-                Ok(Ok(value)) => (BlockingOutcome::Completed, Ok(value)),
-                Ok(Err(error)) if error.kind == DistributedErrorKind::WorkerUnavailable => {
-                    (BlockingOutcome::Cancelled, Err(error))
+            let mut metrics = inner.metrics.lock().expect("localization metrics mutex");
+            metrics.execution_time_ns.record(execution_ns);
+            metrics.processed_bytes = metrics.processed_bytes.saturating_add(expected_bytes);
+            match result {
+                Ok(Ok(value)) => {
+                    metrics.completed_jobs = metrics.completed_jobs.saturating_add(1);
+                    Ok(value)
                 }
-                Ok(Err(error)) => (BlockingOutcome::Failed, Err(error)),
-                Err(_) => (
-                    BlockingOutcome::Panicked,
+                Ok(Err(error)) if error.kind == DistributedErrorKind::WorkerUnavailable => {
+                    metrics.cancelled_jobs = metrics.cancelled_jobs.saturating_add(1);
+                    Err(error)
+                }
+                Ok(Err(error)) => {
+                    metrics.failed_jobs = metrics.failed_jobs.saturating_add(1);
+                    Err(error)
+                }
+                Err(_) => {
+                    metrics.panicked_jobs = metrics.panicked_jobs.saturating_add(1);
                     Err(DistributedError::new(
                         DistributedErrorKind::LocalizationFailed,
                         "localization blocking worker failed",
-                    )),
-                ),
-            };
-            record_outcome(&inner, outcome, expected_bytes, execution_ns);
-            result
+                    ))
+                }
+            }
         })
         .await;
         joined.map_err(|_| {
@@ -513,15 +513,7 @@ struct ActiveJobGuard {
 
 impl ActiveJobGuard {
     fn new(inner: Arc<RuntimeInner>, requirements: BlockingRequirements) -> Self {
-        if requirements.read {
-            inner.active_reads.fetch_add(1, Ordering::AcqRel);
-        }
-        if requirements.write {
-            inner.active_writes.fetch_add(1, Ordering::AcqRel);
-        }
-        if requirements.hash {
-            inner.active_hashes.fetch_add(1, Ordering::AcqRel);
-        }
+        bump_active(&inner, requirements, true);
         Self {
             inner,
             requirements,
@@ -531,41 +523,24 @@ impl ActiveJobGuard {
 
 impl Drop for ActiveJobGuard {
     fn drop(&mut self) {
-        if self.requirements.read {
-            self.inner.active_reads.fetch_sub(1, Ordering::AcqRel);
-        }
-        if self.requirements.write {
-            self.inner.active_writes.fetch_sub(1, Ordering::AcqRel);
-        }
-        if self.requirements.hash {
-            self.inner.active_hashes.fetch_sub(1, Ordering::AcqRel);
-        }
+        bump_active(&self.inner, self.requirements, false);
     }
 }
 
-fn record_outcome(
-    inner: &RuntimeInner,
-    outcome: BlockingOutcome,
-    expected_bytes: u64,
-    execution_ns: u64,
-) {
-    let mut metrics = inner.metrics.lock().expect("localization metrics mutex");
-    metrics.execution_time_ns.record(execution_ns);
-    metrics.processed_bytes = metrics.processed_bytes.saturating_add(expected_bytes);
-    match outcome {
-        BlockingOutcome::Completed => {
-            metrics.completed_jobs = metrics.completed_jobs.saturating_add(1);
+fn bump_active(inner: &RuntimeInner, requirements: BlockingRequirements, active: bool) {
+    let apply = |enabled: bool, counter: &AtomicUsize| {
+        if !enabled {
+            return;
         }
-        BlockingOutcome::Failed => {
-            metrics.failed_jobs = metrics.failed_jobs.saturating_add(1);
+        if active {
+            counter.fetch_add(1, Ordering::AcqRel);
+        } else {
+            counter.fetch_sub(1, Ordering::AcqRel);
         }
-        BlockingOutcome::Cancelled => {
-            metrics.cancelled_jobs = metrics.cancelled_jobs.saturating_add(1);
-        }
-        BlockingOutcome::Panicked => {
-            metrics.panicked_jobs = metrics.panicked_jobs.saturating_add(1);
-        }
-    }
+    };
+    apply(requirements.read, &inner.active_reads);
+    apply(requirements.write, &inner.active_writes);
+    apply(requirements.hash, &inner.active_hashes);
 }
 
 struct QueuedJobGuard {

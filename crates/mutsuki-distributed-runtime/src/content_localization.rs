@@ -1,6 +1,6 @@
 use crate::localization_io::{
     BlockingRequirements, BufferedBytes, CancellationGuard, LOCALIZATION_CHUNK_BYTES,
-    LocalizationIoRuntime, cancellation_requested, cancelled_error,
+    LocalizationIoRuntime, cancellation_requested, cancelled_error, capacity_error,
 };
 use crate::process::{
     authenticate_client, authenticate_server, data_transport_budget, endpoint_id, receive_message,
@@ -255,25 +255,13 @@ async fn send_manifest(
     .await
 }
 
-struct SharedLocalization {
-    result: OnceCell<Result<(), DistributedError>>,
-}
-
-impl SharedLocalization {
-    fn new() -> Self {
-        Self {
-            result: OnceCell::new(),
-        }
-    }
-}
-
 pub struct LinkResourceLocalizer {
     worker_node: NodeId,
     secret: Arc<[u8]>,
     destination: PathBuf,
     timeout: Duration,
     io: LocalizationIoRuntime,
-    in_flight: Mutex<BTreeMap<String, Weak<SharedLocalization>>>,
+    in_flight: Mutex<BTreeMap<String, Weak<OnceCell<Result<(), DistributedError>>>>>,
 }
 
 impl LinkResourceLocalizer {
@@ -317,12 +305,9 @@ impl LinkResourceLocalizer {
         self.io.shutdown();
         let deadline = Instant::now() + self.timeout;
         loop {
-            let metrics = self.io.metrics();
-            if metrics.queued_jobs == 0
-                && metrics.active_reads == 0
-                && metrics.active_writes == 0
-                && metrics.active_hash_jobs == 0
-                && metrics.buffered_bytes == 0
+            let m = self.io.metrics();
+            if m.queued_jobs + m.active_reads + m.active_writes + m.active_hash_jobs == 0
+                && m.buffered_bytes == 0
             {
                 return Ok(());
             }
@@ -351,13 +336,12 @@ impl LinkResourceLocalizer {
             if let Some(existing) = in_flight.get(&key).and_then(Weak::upgrade) {
                 existing
             } else {
-                let shared = Arc::new(SharedLocalization::new());
+                let shared = Arc::new(OnceCell::new());
                 in_flight.insert(key, Arc::downgrade(&shared));
                 shared
             }
         };
         shared
-            .result
             .get_or_init(|| self.localize_one_inner(resource))
             .await
             .clone()
@@ -775,13 +759,6 @@ fn storage_error() -> DistributedError {
     DistributedError::new(
         DistributedErrorKind::Storage,
         "direct content storage operation failed",
-    )
-}
-
-fn capacity_error() -> DistributedError {
-    DistributedError::new(
-        DistributedErrorKind::CapacityExceeded,
-        "direct content exceeds the localization I/O budget",
     )
 }
 

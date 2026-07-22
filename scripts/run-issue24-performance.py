@@ -72,6 +72,22 @@ def scenarios(quick: bool) -> list[dict]:
     return result
 
 
+def summarize_run(
+    output: Path, scenario: dict, peak_rss: int = 0, context_switches: int = 0, *, reused: bool = False,
+) -> dict:
+    raw = json.loads(output.read_text())
+    result = {
+        "raw_report": output.name,
+        "peak_rss_bytes": peak_rss,
+        "context_switches": context_switches,
+        "selected_case": raw["cases"][scenario["case"]],
+        "correctness": raw["correctness"],
+    }
+    if reused:
+        result["sampler_note"] = "raw evidence reused after an interrupted matrix; RSS was not retained"
+    return result
+
+
 def run_process(binary: Path, scenario: dict, output: Path, samples: int, warmups: int) -> dict:
     env = os.environ.copy()
     env.update({
@@ -99,26 +115,10 @@ def run_process(binary: Path, scenario: dict, output: Path, samples: int, warmup
         time.sleep(0.01)
     if process.returncode:
         raise subprocess.CalledProcessError(process.returncode, [str(binary)])
-    raw = json.loads(output.read_text())
-    return {
-        "raw_report": output.name,
-        "peak_rss_bytes": max(rss_samples, default=0),
-        "context_switches": max(context_samples, default=0) - min(context_samples, default=0),
-        "selected_case": raw["cases"][scenario["case"]],
-        "correctness": raw["correctness"],
-    }
-
-
-def load_existing(output: Path, scenario: dict) -> dict:
-    raw = json.loads(output.read_text())
-    return {
-        "raw_report": output.name,
-        "peak_rss_bytes": 0,
-        "context_switches": 0,
-        "selected_case": raw["cases"][scenario["case"]],
-        "correctness": raw["correctness"],
-        "sampler_note": "raw evidence reused after an interrupted matrix; RSS was not retained",
-    }
+    return summarize_run(
+        output, scenario, max(rss_samples, default=0),
+        max(context_samples, default=0) - min(context_samples, default=0),
+    )
 
 
 def baseline_elapsed(directory: Path, size: int) -> float | None:
@@ -149,21 +149,10 @@ def distribution(values: list[int], unit: str) -> dict:
 
 def repository_revision() -> dict[str, object]:
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    # Performance artifacts are measurement outputs written by this harness; exclude
-    # them so a clean source tree can lock dirty=false while regenerating reports.
-    dirty = bool(
-        subprocess.check_output(
-            [
-                "git",
-                "status",
-                "--porcelain",
-                "--",
-                ".",
-                ":!artifacts/performance",
-            ],
-            text=True,
-        ).strip()
-    )
+    # Exclude regenerated performance artifacts so source-clean trees lock dirty=false.
+    dirty = bool(subprocess.check_output(
+        ["git", "status", "--porcelain", "--", ".", ":!artifacts/performance"], text=True,
+    ).strip())
     return {"revision": revision, "dirty": dirty}
 
 
@@ -176,7 +165,6 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--report-only", action="store_true")
     args = parser.parse_args()
-    # Capture before writing artifacts so a clean source tree can lock dirty=false.
     repository_revisions = {"MutsukiDistributedHost": repository_revision()}
     args.output.mkdir(parents=True, exist_ok=True)
     process_runs, samples, warmups = ((1, 1, 0) if args.quick else (3, 5, 1))
@@ -186,31 +174,20 @@ def main() -> None:
         for run in range(process_runs):
             path = args.output / f"{scenario['name']}-run{run}.json"
             if args.report_only and path.exists():
-                runs.append(load_existing(path, scenario))
+                runs.append(summarize_run(path, scenario, reused=True))
             elif args.resume and path.exists() and not scenario["name"].startswith("cross-"):
-                runs.append(load_existing(path, scenario))
+                runs.append(summarize_run(path, scenario, reused=True))
             else:
                 runs.append(run_process(args.binary, scenario, path, samples, warmups))
         results.append({"scenario": scenario, "runs": runs})
         evidence = [sample for run in runs for sample in run["selected_case"]["evidence"]]
-        # Aggregate noisy reactor/RSS samples across independent process runs with
-        # medians so a single OS scheduling spike cannot veto a clean matrix.
+        # Median across independent process runs dampens single-run OS scheduling spikes.
         per_run_heartbeat = [
-            max(
-                (sample["reactor_heartbeat_p99_ns"] for sample in run["selected_case"]["evidence"]),
-                default=0,
-            )
+            max((sample["reactor_heartbeat_p99_ns"] for sample in run["selected_case"]["evidence"]), default=0)
             for run in runs
         ]
         heartbeat = int(statistics.median(per_run_heartbeat)) if per_run_heartbeat else 0
-        gates.append(
-            {
-                "name": f"{scenario['name']}: heartbeat p99 < 50ms",
-                "passed": heartbeat < 50_000_000,
-                "value": heartbeat,
-                "per_run_max_ns": per_run_heartbeat,
-            }
-        )
+        gates.append({"name": f"{scenario['name']}: heartbeat p99 < 50ms", "passed": heartbeat < 50_000_000, "value": heartbeat, "per_run_max_ns": per_run_heartbeat})
         gates.append({"name": f"{scenario['name']}: correctness counters zero", "passed": all(all(value == 0 for value in run["correctness"].values()) for run in runs)})
         for sample in evidence:
             for key in ("origin_io", "worker_io"):
