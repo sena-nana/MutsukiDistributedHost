@@ -1735,7 +1735,7 @@ mod tests {
         .await
         .unwrap();
         let mut portable = test_portable();
-        portable.task.payload = json!({"message": "x".repeat(4 * 1024)});
+        portable.task.payload = json!({"message": "x".repeat(4 * 1024)}).into();
         let placement = controller
             .coordinator()
             .submit(

@@ -31,9 +31,15 @@ pub trait HostAdapter: Send + Sync {
     fn health(&self) -> HostFuture<'_, String>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ServiceHostAdapter {
     client: ControlClient,
+}
+
+impl std::fmt::Debug for ServiceHostAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceHostAdapter").finish_non_exhaustive()
+    }
 }
 
 impl ServiceHostAdapter {
