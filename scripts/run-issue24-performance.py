@@ -147,6 +147,14 @@ def distribution(values: list[int], unit: str) -> dict:
     }
 
 
+def repository_revision() -> dict[str, object]:
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    dirty = bool(
+        subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+    )
+    return {"revision": revision, "dirty": dirty}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, default=Path("target/release/content_localization"))
@@ -156,6 +164,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--report-only", action="store_true")
     args = parser.parse_args()
+    # Capture before writing artifacts so a clean source tree can lock dirty=false.
+    repository_revisions = {"MutsukiDistributedHost": repository_revision()}
     args.output.mkdir(parents=True, exist_ok=True)
     process_runs, samples, warmups = ((1, 1, 0) if args.quick else (3, 5, 1))
     results, gates = [], []
@@ -196,10 +206,11 @@ def main() -> None:
     if 64 * MIB in cross and 512 * MIB in cross:
         growth = cross[512 * MIB] - cross[64 * MIB]
         gates.append({"name": "paused-network RSS growth bounded", "passed": growth <= MAX_BUFFERED_BYTES + 16 * MIB, "growth_bytes": growth, "limit_bytes": MAX_BUFFERED_BYTES + 16 * MIB})
-    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    revision = repository_revisions["MutsukiDistributedHost"]["revision"]
     report = {
         "schema_version": "mutsuki.distributed.issue24.performance.v1",
         "revision": revision,
+        "dirty": repository_revisions["MutsukiDistributedHost"]["dirty"],
         "environment": {"platform": platform.platform(), "machine": platform.machine(), "python": platform.python_version()},
         "process_runs": process_runs, "samples": samples, "warmups": warmups,
         "max_buffered_bytes": MAX_BUFFERED_BYTES,
@@ -208,7 +219,6 @@ def main() -> None:
         "limitations": ["RSS includes benchmark fixture setup and all three localization cases in each process.", "Context-switch sampling uses proc_pidinfo on macOS and reports zero on fallback platforms."],
     }
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-    repository_revisions = {"MutsukiDistributedHost": {"revision": revision, "dirty": True}}
     environment = report["environment"]
     core_cases = []
     for item in results:
