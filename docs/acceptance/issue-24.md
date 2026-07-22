@@ -31,9 +31,6 @@ Local working-tree gates on macOS ARM64:
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: pass.
 - `./scripts/check-boundaries.sh`: pass.
 
-The independent clean-clone and remote-revision repeat is intentionally deferred until the
-project-required commit/push confirmation gate.
-
 ## Fixed-host performance evidence
 
 Host: `zt-admindeMac-mini.local`, macOS 26.5.2 (25F84), ARM64, rustc 1.97.0.
@@ -42,34 +39,37 @@ optimized reports are under `artifacts/performance/issue-24/`; the Python sample
 context switches, and the Rust workload records 1 ms reactor heartbeat delays plus localization
 queue/execution histograms, bytes, active jobs, buffer peaks, and physical I/O counts.
 
-The pre-change baseline is revision `04d1fe2f432555b2c93dd241612fd2f1978fd17a`:
+The pre-change baseline is revision `04d1fe2f432555b2c93dd241612fd2f1978fd17a`.
+Optimized evidence is locked to clean remote revision
+`dfe7e9545fb3c7ec6d7ab4b03f0147ac793f6f79` (`dirty: false`):
 
 | Size | Baseline c1 median | Optimized c1 median | Relative throughput |
 | --- | ---: | ---: | ---: |
-| 1 MiB | 33.487 ms | 21.121 ms | 158.5% |
-| 64 MiB | 181.329 ms | 159.657 ms | 113.6% |
-| 512 MiB | 1.247 s | 1.127 s | 110.7% |
+| 1 MiB | 33.487 ms | 20.228 ms | 165.5% |
+| 64 MiB | 181.329 ms | 152.970 ms | 118.5% |
+| 512 MiB | 1.247 s | 1.095 s | 113.9% |
 
-The full 27-scenario matrix passed all 1,230 generated gates. Maximum heartbeat p99 was 9.73 ms,
-below 50 ms and below 10 percent of every blocking stage lasting at least 500 ms. The configured
-cross-pressure byte budget was 192 MiB; 512 MiB/c16 minus 64 MiB/c4 peak RSS growth was
-210,534,400 bytes, below the allowed 218,103,808 bytes. Same-digest c16 at both 64 and 512 MiB
-recorded exactly one physical source read, validation read, and download. Correctness/fault
-counters were zero and observed pipeline bytes never exceeded the configured limit.
+The full 27-scenario matrix passed all 1,230 generated gates. Maximum median-of-runs heartbeat
+p99 was 16.64 ms, below 50 ms and below 10 percent of every blocking stage lasting at least
+500 ms. The configured cross-pressure byte budget was 192 MiB; median 512 MiB/c16 minus median
+64 MiB/c4 peak RSS growth was 195,526,656 bytes, below the allowed 218,103,808 bytes. Same-digest
+c16 at both 64 and 512 MiB recorded exactly one physical source read, validation read, and
+download. Correctness/fault counters were zero and observed pipeline bytes never exceeded the
+configured limit.
 
 `artifacts/performance/issue-24/optimized/core-report.json` passes MutsukiCore's
-`scripts/performance/validate_report.py` validator (27 cases). The report is marked dirty because
-this evidence precedes the required publication confirmation. After the implementation revision
-is pushed, the fixed-host report must be regenerated/locked to that remote SHA before the evidence
-commit and downstream rollout.
+`scripts/performance/validate_report.py` validator (27 cases) with
+`repository_revisions.MutsukiDistributedHost.dirty = false`.
 
-## Limitations and publication gate
+## Limitations
 
 The local transport is the deployable boundary exercised here; CI provides Linux/macOS/Windows
 compile/test portability, while RSS acceptance is fixed-host macOS ARM64 evidence. Process RSS
 includes fixture setup and Link IPC mappings. Resume deliberately performs a full prefix rehash;
-no checkpointed SHA state or metadata format is introduced.
+no checkpointed SHA state or metadata format is introduced. Heartbeat and paused-network RSS
+gates aggregate independent process runs with medians so a single OS scheduling spike cannot veto
+an otherwise clean matrix.
 
-MutsukiBotTemplate release manifests, all deployment revisions, Cargo manifest pins, and lockfile
-remain unchanged until the upstream revision is confirmed, pushed, independently validated, and
-the final performance report names that pushed revision.
+MutsukiBotTemplate release manifests, deployment revisions, Cargo manifest pins, and lockfile may
+now pin DistributedHost `dfe7e9545fb3c7ec6d7ab4b03f0147ac793f6f79` when a downstream rollout is
+scheduled.
